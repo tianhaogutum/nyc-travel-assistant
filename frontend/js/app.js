@@ -625,7 +625,7 @@
     pageLoading(mode === 'raw' ? '📊 直接返回附近結果…' : '🧠 懂你 mode 分析中…');
     try {
       const loc = await Geo.getLocation();
-      const res = await Api.post('/api/eat', {
+      const payload = {
         latitude: loc.lat,
         longitude: loc.lng,
         radius_km: getRadius(),
@@ -633,8 +633,15 @@
         mode: mode,
         labels: _selectedLabels,
         questionnaire: answers,
-      });
-      pageResults(res, '#/eat');
+      };
+      if (mode === 'raw') {
+        const res = await Api.post('/api/eat', payload);
+        pageResults(res, '#/eat');
+      } else {
+        await Api.stream('/api/eat/stream', payload, (data) => {
+          pageResults(data, '#/eat');
+        });
+      }
     } catch (e) {
       pageResults({ error: e.message, rankings: [], total: 0, radius_km: 0, data_source: '', pipeline_time_ms: 0 }, '#/eat');
     }
@@ -645,7 +652,7 @@
     pageLoading(mode === 'raw' ? '📊 直接返回附近結果…' : '🧠 懂你 mode 分析中…');
     try {
       const loc = await Geo.getLocation();
-      const res = await Api.post('/api/explore', {
+      const payload = {
         latitude: loc.lat,
         longitude: loc.lng,
         radius_km: getRadius(),
@@ -654,8 +661,15 @@
         mode: mode,
         labels: _selectedLabels,
         questionnaire: answers,
-      });
-      pageResults(res, '#/explore');
+      };
+      if (mode === 'raw') {
+        const res = await Api.post('/api/explore', payload);
+        pageResults(res, '#/explore');
+      } else {
+        await Api.stream('/api/explore/stream', payload, (data) => {
+          pageResults(data, '#/explore');
+        });
+      }
     } catch (e) {
       pageResults({ error: e.message, rankings: [], total: 0, radius_km: 0, data_source: '', pipeline_time_ms: 0 }, '#/explore');
     }

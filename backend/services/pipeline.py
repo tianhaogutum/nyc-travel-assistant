@@ -536,3 +536,104 @@ async def run_raw_explore_pipeline(
         "category": category,
         "pipeline_time_ms": elapsed,
     }
+
+
+# ── Streaming pipelines (SSE) ──────────────────────────────────────
+
+async def stream_eat_pipeline(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+    data_source: str,
+    questionnaire: dict,
+    labels: Optional[list] = None,
+):
+    """SSE generator: yields cold results immediately, then AI rankings."""
+    t0 = time.time()
+    db_path = _resolve_db(data_source, "food_drink")
+    if db_path is None:
+        yield f"data: {json.dumps({'error': f'Database not found for {data_source}/food_drink', 'rankings': [], 'total': 0})}\n\n"
+        return
+
+    places = cold_filter(db_path, latitude, longitude, radius_km, limit=TOP_N, labels=labels)
+    if not places:
+        yield f"data: {json.dumps({'type': 'cold', 'rankings': [], 'total': 0, 'radius_km': radius_km, 'data_source': data_source, 'pipeline_time_ms': 0})}\n\n"
+        return
+
+    cold_rankings = _fallback_rankings(places)
+    yield f"data: {json.dumps({'type': 'cold', 'rankings': cold_rankings, 'total': len(cold_rankings), 'radius_km': radius_km, 'data_source': data_source, 'pipeline_time_ms': 0})}\n\n"
+
+    place_names = [p["name"] for p in places]
+    try:
+        neg_reviews = await search_negative_reviews(place_names)
+    except Exception:
+        neg_reviews = {}
+
+    user_profile = get_profile_for_llm()
+    places_text = _format_places_for_llm(places)
+    neg_text = _format_negative_reviews(neg_reviews)
+    online_recs = query_online_recommendations("food_drink", latitude, longitude, radius_km)
+    online_recs_text = _format_online_recs(online_recs)
+    prompt = _build_eat_prompt(places_text, user_profile, questionnaire, radius_km, neg_text, online_recs_text)
+
+    llm_response = await call_llm(prompt)
+    llm_rankings = _parse_llm_response(llm_response)
+
+    if llm_rankings:
+        rankings = _merge_rankings(llm_rankings, places + online_recs, neg_reviews)
+    else:
+        rankings = _fallback_rankings(places)
+
+    elapsed = round((time.time() - t0) * 1000)
+    yield f"data: {json.dumps({'type': 'ai', 'rankings': rankings, 'total': len(rankings), 'radius_km': radius_km, 'data_source': data_source, 'pipeline_time_ms': elapsed})}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+async def stream_explore_pipeline(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+    data_source: str,
+    category: str,
+    questionnaire: dict,
+    labels: Optional[list] = None,
+):
+    """SSE generator: yields cold results immediately, then AI rankings."""
+    t0 = time.time()
+    db_path = _resolve_db(data_source, category)
+    if db_path is None:
+        yield f"data: {json.dumps({'error': f'Database not found for {data_source}/{category}', 'rankings': [], 'total': 0})}\n\n"
+        return
+
+    places = cold_filter(db_path, latitude, longitude, radius_km, limit=TOP_N, labels=labels)
+    if not places:
+        yield f"data: {json.dumps({'type': 'cold', 'rankings': [], 'total': 0, 'radius_km': radius_km, 'data_source': data_source, 'category': category, 'pipeline_time_ms': 0})}\n\n"
+        return
+
+    cold_rankings = _fallback_rankings(places)
+    yield f"data: {json.dumps({'type': 'cold', 'rankings': cold_rankings, 'total': len(cold_rankings), 'radius_km': radius_km, 'data_source': data_source, 'category': category, 'pipeline_time_ms': 0})}\n\n"
+
+    place_names = [p["name"] for p in places]
+    try:
+        neg_reviews = await search_negative_reviews(place_names)
+    except Exception:
+        neg_reviews = {}
+
+    user_profile = get_profile_for_llm()
+    places_text = _format_places_for_llm(places)
+    neg_text = _format_negative_reviews(neg_reviews)
+    online_recs = query_online_recommendations(category, latitude, longitude, radius_km)
+    online_recs_text = _format_online_recs(online_recs)
+    prompt = _build_explore_prompt(places_text, user_profile, questionnaire, radius_km, category, neg_text, online_recs_text)
+
+    llm_response = await call_llm(prompt)
+    llm_rankings = _parse_llm_response(llm_response)
+
+    if llm_rankings:
+        rankings = _merge_rankings(llm_rankings, places + online_recs, neg_reviews)
+    else:
+        rankings = _fallback_rankings(places)
+
+    elapsed = round((time.time() - t0) * 1000)
+    yield f"data: {json.dumps({'type': 'ai', 'rankings': rankings, 'total': len(rankings), 'radius_km': radius_km, 'data_source': data_source, 'category': category, 'pipeline_time_ms': elapsed})}\n\n"
+    yield "data: [DONE]\n\n"

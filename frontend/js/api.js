@@ -15,6 +15,30 @@ const Api = {
     if (!res.ok) throw new Error(`API ${res.status}`);
     return res.json();
   },
+
+  async stream(path, body, onEvent) {
+    const res = await fetch(`${CONFIG.API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+      for (const part of parts) {
+        if (part.startsWith('data: ') && !part.includes('[DONE]')) {
+          onEvent(JSON.parse(part.slice(6)));
+        }
+      }
+    }
+  },
 };
 
 /* ----- Geo: gps / test / custom location ----- */
