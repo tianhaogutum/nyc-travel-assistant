@@ -81,13 +81,13 @@
         <option value="brooklyn"${ds === 'brooklyn' ? ' selected' : ''}>Brooklyn</option>
       </select>
       <div class="loc-mode-toggle">
-        <button class="loc-btn${mode === 'test' ? ' active' : ''}" data-mode="test">🧪 測試</button>
-        <button class="loc-btn${mode === 'custom' ? ' active' : ''}" data-mode="custom">✏️ 自訂</button>
+        <button class="loc-btn${mode === 'test' ? ' active' : ''}" data-mode="test">🧪 Test</button>
+        <button class="loc-btn${mode === 'custom' ? ' active' : ''}" data-mode="custom">✏️ Customize</button>
       </div>
       ${mode === 'test' ? `<div id="loc-sub"><select id="sel-test-loc" class="topbar-select">${locOpts}</select></div>` : ''}
       ${mode === 'custom' ? `<div id="loc-sub"><div class="custom-loc-inputs">
-        <input id="inp-lat" class="loc-input" type="number" step="0.0001" placeholder="緯度 lat" value="${customLat}">
-        <input id="inp-lng" class="loc-input" type="number" step="0.0001" placeholder="經度 lng" value="${customLng}">
+        <input id="inp-lat" class="loc-input" type="number" step="0.0001" placeholder="Latitude" value="${customLat}">
+        <input id="inp-lng" class="loc-input" type="number" step="0.0001" placeholder="Longitude" value="${customLng}">
       </div></div>` : ''}
     </div>`;
   }
@@ -529,7 +529,7 @@
             ${r.primary_type ? `<span>${r.primary_type}</span>` : ''}
             ${r.price_level ? `<span>${r.price_level}</span>` : ''}
             ${r.distance_m ? `<span>${r.distance_m}m</span>` : ''}
-            ${r.review_count ? `<span>${r.review_count}條評價</span>` : ''}
+            ${r.review_count ? `<span>${r.review_count} reviews</span>` : ''}
           </div>
         </div>`;
     }).join('');

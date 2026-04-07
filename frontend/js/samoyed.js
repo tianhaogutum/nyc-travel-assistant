@@ -25,7 +25,7 @@ const Samoyed = {
     const text = customBubble || this.bubbles[state] || this.bubbles.idle;
     return `
       <div class="dog-container">
-        <img class="dog-img ${cls}" src="img/samoyed.jpg" alt="薩摩耶">
+        <img class="dog-img ${cls}" src="img/samoyed.jpg" alt="Samoyed">
       </div>
       <div class="bubble">${text}</div>
     `;
@@ -50,15 +50,15 @@ const EasterEggs = {
     ).join(' ').toLowerCase();
 
     if (/matcha|抛茶|green tea/.test(joined))
-      eggs.push('🍵 發現抹茶！薩摩耶端著一杯向你跑來～');
+      eggs.push('🍵 Matcha spotted! Samoyed is running over with a cup~');
     if (/jellycat|toy|gift|玩具/.test(joined))
-      eggs.push('🧸 沒有人可以拒絕 Jellycat！');
+      eggs.push('🧸 Nobody can resist a Jellycat!');
     if (/taro|芋圓|芋/.test(joined))
-      eggs.push('🟣 芋圓芋圓！超軟超好吃！');
+      eggs.push('🟣 Taro taro! So soft and delicious!');
     if (/cat.?cafe|貓咖|貓/.test(joined))
-      eggs.push('🐱 薩摩耶發現了一隻貓，互相歪頭～');
+      eggs.push('🐱 Samoyed spotted a cat — both tilting their heads~');
     if (new Date().getHours() >= 20)
-      eggs.push('🌙 過了八點不吃東西啦～推薦留著明天去！');
+      eggs.push('🌙 It\'s past 8pm, no eating after that~ Save it for tomorrow!');
     return eggs;
   },
 
