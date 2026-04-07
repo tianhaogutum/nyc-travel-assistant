@@ -34,8 +34,8 @@
           <div class="onb-footer">
             <div class="onb-dots">${dots}</div>
             <div class="onb-btns">
-              ${!isFirst ? '<button class="btn btn-outline btn-sm" id="onb-prev">上一步</button>' : '<div></div>'}
-              <button class="btn btn-primary btn-sm" id="onb-next">${isLast ? '🐾 出發！' : '下一步 →'}</button>
+              ${!isFirst ? '<button class="btn btn-outline btn-sm" id="onb-prev">← Previous</button>' : '<div></div>'}
+              <button class="btn btn-primary btn-sm" id="onb-next">${isLast ? '🐾 Let\'s Go!' : 'Next →'}</button>
             </div>
           </div>
         </div>`;
@@ -120,10 +120,10 @@
   /* ===== nav footer ===== */
   function renderNav(active) {
     const items = [
-      { hash: '#/',        icon: '🏠', label: '首頁' },
-      { hash: '#/eat',     icon: '🍜', label: '美食' },
-      { hash: '#/explore', icon: '🗽', label: '探索' },
-      { hash: '#/profile', icon: '🐾', label: '我的' },
+      { hash: '#/',        icon: '🏠', label: 'Home' },
+      { hash: '#/eat',     icon: '🍜', label: 'Food' },
+      { hash: '#/explore', icon: '🗽', label: 'Explore' },
+      { hash: '#/profile', icon: '🐾', label: 'My Profile' },
     ];
     return `<nav class="bottom-nav">${items.map(it =>
       `<a href="${it.hash}" class="nav-item${it.hash === active ? ' active' : ''}">${it.icon}<span>${it.label}</span></a>`
@@ -135,16 +135,16 @@
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
         ${Samoyed.render('idle')}
-        <h1 class="hero-title">NYC 旅行助手</h1>
-        <p class="hero-sub">你的紐約吃喝玩樂 AI 嚮導 🗽</p>
+        <h1 class="hero-title">NYC Travel Assistant</h1>
+        <p class="hero-sub">Your AI guide to eating, drinking & exploring NYC 🗽</p>
         <div class="home-cards">
           <a href="#/eat" class="home-card card-eat">
             <span class="home-card-icon">🍜</span>
-            <span class="home-card-label">找美食</span>
+            <span class="home-card-label">Find Food</span>
           </a>
           <a href="#/explore" class="home-card card-explore">
             <span class="home-card-icon">🗽</span>
-            <span class="home-card-label">去探索</span>
+            <span class="home-card-label">Explore</span>
           </a>
         </div>
       </div>` + renderNav('#/');
@@ -158,110 +158,110 @@
     return `
       <div class="pipe-settings">
         <div class="pipe-row">
-          <label class="pipe-label">📍 搜索範圍</label>
+          <label class="pipe-label">📍 Search Radius</label>
           <div class="pipe-radius">
             <input type="range" id="inp-radius" min="0.5" max="100" step="0.5" value="${r}">
             <span id="lbl-radius">${r} km</span>
           </div>
         </div>
         <div class="pipe-row">
-          <label class="pipe-label">⚡ 模式</label>
+          <label class="pipe-label">⚡ Mode</label>
           <div class="pipe-mode-toggle">
-            <button class="mode-btn${m === 'ai' ? ' active' : ''}" data-mode="ai">🧠 懂你 mode</button>
-            <button class="mode-btn${m === 'raw' ? ' active' : ''}" data-mode="raw">📊 直接返回 mode</button>
+            <button class="mode-btn${m === 'ai' ? ' active' : ''}" data-mode="ai">🧠 Smart Mode</button>
+            <button class="mode-btn${m === 'raw' ? ' active' : ''}" data-mode="raw">📊 Direct Mode</button>
           </div>
         </div>
-        <div class="pipe-row" id="label-row"><label class="pipe-label">🏷️ 細分類型</label><div id="label-container"><span class="pipe-hint">載入中…</span></div></div>
+        <div class="pipe-row" id="label-row"><label class="pipe-label">🏷️ Subcategories</label><div id="label-container"><span class="pipe-hint">Loading...</span></div></div>
       </div>`;
   }
 
   let _selectedLabels = [];
 
-  const LABEL_ZH = {
-    american_restaurant: '美式餐廳',
-    asian_restaurant: '亞洲料理',
-    bagel_shop: '貝果店',
-    bakery: '麵包烘焙',
-    bar: '酒吧',
-    bar_and_grill: '燒烤酒吧',
-    barbecue_restaurant: '燒烤餐廳',
-    breakfast_restaurant: '早餐餐廳',
-    british_restaurant: '英式餐廳',
-    brunch_restaurant: '早午餐',
-    cafe: '咖啡廳',
-    cantonese_restaurant: '粵菜餐廳',
-    caribbean_restaurant: '加勒比海料理',
-    chinese_restaurant: '中餐廳',
-    cocktail_bar: '調酒吧',
-    coffee_shop: '咖啡店',
-    deli: '熟食店',
-    dessert_restaurant: '甜品餐廳',
-    dessert_shop: '甜品店',
-    dim_sum_restaurant: '點心餐廳',
-    diner: '美式小館',
-    ethiopian_restaurant: '衣索比亞料理',
-    fine_dining_restaurant: '精緻餐廳',
-    food_court: '美食廣場',
-    french_restaurant: '法式餐廳',
-    fusion_restaurant: '創意融合料理',
-    gastropub: '美食酒館',
-    greek_restaurant: '希臘餐廳',
-    grocery_store: '雜貨店',
-    hamburger_restaurant: '漢堡店',
-    hot_pot_restaurant: '火鍋餐廳',
-    ice_cream_shop: '冰淇淋店',
-    indian_restaurant: '印度餐廳',
-    italian_restaurant: '義式餐廳',
-    japanese_izakaya_restaurant: '日式居酒屋',
-    japanese_restaurant: '日式餐廳',
-    korean_barbecue_restaurant: '韓式烤肉',
-    korean_restaurant: '韓式餐廳',
-    latin_american_restaurant: '拉丁美洲料理',
-    lebanese_restaurant: '黎巴嫩料理',
-    lounge_bar: '休閒酒吧',
-    meal_delivery: '外送餐廳',
-    meal_takeaway: '外帶餐廳',
-    mediterranean_restaurant: '地中海料理',
-    mexican_restaurant: '墨西哥餐廳',
-    middle_eastern_restaurant: '中東料理',
-    north_indian_restaurant: '北印度料理',
-    pastry_shop: '西點店',
-    peruvian_restaurant: '秘魯料理',
-    pizza_restaurant: '披薩店',
-    ramen_restaurant: '拉麵店',
-    restaurant: '餐廳',
-    sandwich_shop: '三明治店',
-    seafood_restaurant: '海鮮餐廳',
-    south_american_restaurant: '南美料理',
-    spanish_restaurant: '西班牙料理',
-    sports_bar: '運動酒吧',
-    steak_house: '牛排館',
-    supermarket: '超市',
-    sushi_restaurant: '壽司餐廳',
-    taco_restaurant: '墨西哥塔可',
-    taiwanese_restaurant: '台灣料理',
-    tapas_restaurant: '西班牙小吃',
-    tea_house: '茶館',
-    thai_restaurant: '泰式餐廳',
-    turkish_restaurant: '土耳其料理',
-    vegan_restaurant: '純素餐廳',
-    vegetarian_restaurant: '素食餐廳',
-    vietnamese_restaurant: '越南料理',
-    wine_bar: '葡萄酒吧',
+  const LABEL_EN = {
+    american_restaurant: 'American Restaurant',
+    asian_restaurant: 'Asian Cuisine',
+    bagel_shop: 'Bagel Shop',
+    bakery: 'Bakery',
+    bar: 'Bar',
+    bar_and_grill: 'Bar & Grill',
+    barbecue_restaurant: 'Barbecue Restaurant',
+    breakfast_restaurant: 'Breakfast Restaurant',
+    british_restaurant: 'British Restaurant',
+    brunch_restaurant: 'Brunch',
+    cafe: 'Café',
+    cantonese_restaurant: 'Cantonese Restaurant',
+    caribbean_restaurant: 'Caribbean Cuisine',
+    chinese_restaurant: 'Chinese Restaurant',
+    cocktail_bar: 'Cocktail Bar',
+    coffee_shop: 'Coffee Shop',
+    deli: 'Deli',
+    dessert_restaurant: 'Dessert Restaurant',
+    dessert_shop: 'Dessert Shop',
+    dim_sum_restaurant: 'Dim Sum Restaurant',
+    diner: 'Diner',
+    ethiopian_restaurant: 'Ethiopian Cuisine',
+    fine_dining_restaurant: 'Fine Dining',
+    food_court: 'Food Court',
+    french_restaurant: 'French Restaurant',
+    fusion_restaurant: 'Fusion Cuisine',
+    gastropub: 'Gastropub',
+    greek_restaurant: 'Greek Restaurant',
+    grocery_store: 'Grocery Store',
+    hamburger_restaurant: 'Hamburger Restaurant',
+    hot_pot_restaurant: 'Hot Pot Restaurant',
+    ice_cream_shop: 'Ice Cream Shop',
+    indian_restaurant: 'Indian Restaurant',
+    italian_restaurant: 'Italian Restaurant',
+    japanese_izakaya_restaurant: 'Japanese Izakaya',
+    japanese_restaurant: 'Japanese Restaurant',
+    korean_barbecue_restaurant: 'Korean BBQ',
+    korean_restaurant: 'Korean Restaurant',
+    latin_american_restaurant: 'Latin American Cuisine',
+    lebanese_restaurant: 'Lebanese Cuisine',
+    lounge_bar: 'Lounge Bar',
+    meal_delivery: 'Meal Delivery',
+    meal_takeaway: 'Takeaway',
+    mediterranean_restaurant: 'Mediterranean Cuisine',
+    mexican_restaurant: 'Mexican Restaurant',
+    middle_eastern_restaurant: 'Middle Eastern Cuisine',
+    north_indian_restaurant: 'North Indian Restaurant',
+    pastry_shop: 'Pastry Shop',
+    peruvian_restaurant: 'Peruvian Cuisine',
+    pizza_restaurant: 'Pizza Restaurant',
+    ramen_restaurant: 'Ramen Restaurant',
+    restaurant: 'Restaurant',
+    sandwich_shop: 'Sandwich Shop',
+    seafood_restaurant: 'Seafood Restaurant',
+    south_american_restaurant: 'South American Cuisine',
+    spanish_restaurant: 'Spanish Restaurant',
+    sports_bar: 'Sports Bar',
+    steak_house: 'Steakhouse',
+    supermarket: 'Supermarket',
+    sushi_restaurant: 'Sushi Restaurant',
+    taco_restaurant: 'Taco Restaurant',
+    taiwanese_restaurant: 'Taiwanese Cuisine',
+    tapas_restaurant: 'Spanish Tapas',
+    tea_house: 'Tea House',
+    thai_restaurant: 'Thai Restaurant',
+    turkish_restaurant: 'Turkish Cuisine',
+    vegan_restaurant: 'Vegan Restaurant',
+    vegetarian_restaurant: 'Vegetarian Restaurant',
+    vietnamese_restaurant: 'Vietnamese Cuisine',
+    wine_bar: 'Wine Bar',
   };
 
   function _labelDisplay(raw) {
-    const en = raw.replace(/_/g, ' ');
-    const zh = LABEL_ZH[raw];
-    return zh ? `${en} · ${zh}` : en;
+    const display = raw.replace(/_/g, ' ');
+    const eng = LABEL_EN[raw];
+    return eng ? eng : display;
   }
 
   function _updateLabelToggleText() {
     const toggle = document.getElementById('label-toggle-btn');
     if (!toggle) return;
     toggle.textContent = _selectedLabels.length
-      ? `已選 ${_selectedLabels.length} 種 ▼`
-      : '全部類型 ▼';
+      ? `Selected ${_selectedLabels.length} ▼`
+      : 'All Categories ▼';
   }
 
   async function loadLabels(dataSource, category) {
@@ -271,7 +271,7 @@
     try {
       const data = await Api.get(`/api/labels?data_source=${dataSource}&category=${category}`);
       const labels = data.labels || [];
-      if (!labels.length) { container.innerHTML = '<span class="pipe-hint">無類型資料</span>'; return; }
+      if (!labels.length) { container.innerHTML = '<span class="pipe-hint">No categories available</span>'; return; }
 
       const optItems = labels.map(l =>
         `<label class="label-option">
@@ -282,11 +282,11 @@
       ).join('');
 
       container.innerHTML = `
-        <button class="label-toggle-btn" id="label-toggle-btn">全部類型 ▼</button>
+        <button class="label-toggle-btn" id="label-toggle-btn">All Categories ▼</button>
         <div class="label-dropdown" id="label-dropdown" style="display:none">
           <label class="label-option label-clear">
             <input type="checkbox" id="label-all" checked>
-            <span>全部（不篩選）</span>
+            <span>All (No Filter)</span>
           </label>
           ${optItems}
         </div>`;
@@ -330,7 +330,7 @@
         }
       });
 
-    } catch { container.innerHTML = '<span class="pipe-hint">載入失敗</span>'; }
+    } catch { container.innerHTML = '<span class="pipe-hint">Failed to load</span>'; }
   }
 
   function wirePipelineSettings() {
@@ -356,7 +356,7 @@
         ${Samoyed.render('think')}
         ${renderPipelineSettings()}
         <div id="q-container"></div>
-        ${m === 'raw' ? '<button class="btn btn-primary" id="btn-raw-go" style="margin-top:12px">🚀 直接返回</button>' : ''}
+        ${m === 'raw' ? '<button class="btn btn-primary" id="btn-raw-go" style="margin-top:12px">🚀 Get Results</button>' : ''}
       </div>` + renderNav('#/eat');
     wireTopBar();
     wirePipelineSettings();
@@ -384,13 +384,13 @@
 
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
-        ${Samoyed.render('explore', '想探索什麼類型？')}
+        ${Samoyed.render('explore', 'What would you like to explore?')}
         ${renderPipelineSettings()}
         <div class="cat-grid">${cats}</div>
         <div id="explore-action-panel" style="display:none">
           ${m === 'raw'
-            ? '<button class="btn btn-primary" id="btn-raw-explore" style="margin-top:12px">🚀 直接返回</button>'
-            : '<button class="btn btn-primary" id="btn-ai-explore" style="margin-top:12px">🧠 繼續 →</button>'
+            ? '<button class="btn btn-primary" id="btn-raw-explore" style="margin-top:12px">🚀 Get Results</button>'
+            : '<button class="btn btn-primary" id="btn-ai-explore" style="margin-top:12px">🧠 Continue →</button>'
           }
         </div>
       </div>` + renderNav('#/explore');
@@ -442,12 +442,12 @@
     $app.innerHTML = `
       <div class="page fade-up loading-page">
         ${Samoyed.render('loading')}
-        <p class="loading-text">${label || '正在分析中，請稍等…'}</p>
+        <p class="loading-text">${label || 'Analyzing... Please wait'}</p>
         <div class="loading-bar"><div class="loading-bar-inner"></div></div>
         <div class="loading-steps">
-          <p class="l-step">📊 從 Google 評分資料庫篩選附近好店…</p>
-          <p class="l-step">🔍 搜尋網路上的真實差評…</p>
-          <p class="l-step">🧠 結合你的偏好 + AI 知識進行排序…</p>
+          <p class="l-step">📊 Filtering nearby places from Google data...</p>
+          <p class="l-step">🔍 Searching for real reviews online...</p>
+          <p class="l-step">🧠 Ranking based on your preferences + AI insights...</p>
         </div>
       </div>`;
   }
@@ -458,7 +458,7 @@
       $app.innerHTML = renderTopBar() + `
         <div class="page fade-up">
           ${Samoyed.render('sad', data.error)}
-          <button id="btn-retry" class="btn btn-primary">返回重試</button>
+          <button id="btn-retry" class="btn btn-primary">Try Again</button>
         </div>` + renderNav(backHash);
       wireTopBar();
       document.getElementById('btn-retry').addEventListener('click', () => {
@@ -475,7 +475,7 @@
     /* reasoning methodology banner */
     const reasoningBanner = `
       <div class="reasoning-banner">
-        <p class="reasoning-oneliner">🧠 綜合你的偏好、Google 數據、AI 知識、網路差評與編輯推薦，為你排序。</p>
+        <p class="reasoning-oneliner">🧠 Ranked by combining your preferences, Google data, AI insights, online reviews & expert recommendations.</p>
       </div>`;
 
     const cards = (data.rankings || []).map(r => {
@@ -490,12 +490,12 @@
       if (rs.user_pref || rs.google_data || rs.llm_knowledge || rs.negative_reviews || rs.online_editorial) {
         reasoningHtml = `
           <div class="r-reasoning">
-            <p class="r-reasoning-title">📐 排名依據</p>
-            ${rs.user_pref ? `<p class="rr-line"><span class="rr-tag rr-user">👤 偏好</span> ${rs.user_pref}</p>` : ''}
-            ${rs.google_data ? `<p class="rr-line"><span class="rr-tag rr-google">📊 數據</span> ${rs.google_data}</p>` : ''}
+            <p class="r-reasoning-title">📐 Ranking Breakdown</p>
+            ${rs.user_pref ? `<p class="rr-line"><span class="rr-tag rr-user">👤 Preference</span> ${rs.user_pref}</p>` : ''}
+            ${rs.google_data ? `<p class="rr-line"><span class="rr-tag rr-google">📊 Data</span> ${rs.google_data}</p>` : ''}
             ${rs.llm_knowledge ? `<p class="rr-line"><span class="rr-tag rr-ai">🧠 AI</span> ${rs.llm_knowledge}</p>` : ''}
-            ${rs.negative_reviews ? `<p class="rr-line"><span class="rr-tag rr-neg">🔍 差評</span> ${rs.negative_reviews}</p>` : ''}
-            ${rs.online_editorial ? `<p class="rr-line"><span class="rr-tag rr-editorial">📰 編輯推薦</span> ${rs.online_editorial}</p>` : ''}
+            ${rs.negative_reviews ? `<p class="rr-line"><span class="rr-tag rr-neg">🔍 Reviews</span> ${rs.negative_reviews}</p>` : ''}
+            ${rs.online_editorial ? `<p class="rr-line"><span class="rr-tag rr-editorial">📰 Expert Pick</span> ${rs.online_editorial}</p>` : ''}
           </div>`;
       }
 
@@ -506,7 +506,7 @@
         const snippetItems = snippets.map(s => `<li class="neg-snippet">${s}</li>`).join('');
         negSnippetsHtml = `
           <details class="neg-snippets-block">
-            <summary class="neg-snippets-title">🔎 DuckDuckGo 原始差評（${snippets.length} 條）</summary>
+            <summary class="neg-snippets-title">🔎 DuckDuckGo Reviews (${snippets.length})</summary>
             <ul class="neg-snippets-list">${snippetItems}</ul>
           </details>`;
       }
@@ -536,7 +536,7 @@
 
     const meta = `
       <div class="result-meta">
-        找到 ${data.total} 個結果 · ${data.data_source} · ${data.radius_km}km
+        Found ${data.total} results · ${data.data_source} · ${data.radius_km}km
         ${data.category ? ` · ${data.category}` : ''}
         · ${data.pipeline_time_ms}ms
       </div>`;
@@ -547,7 +547,7 @@
         ${eggHtml}
         ${meta}
         ${reasoningBanner}
-        <button id="btn-again" class="btn btn-outline" style="margin-bottom:16px;">🔄 再來一次</button>
+        <button id="btn-again" class="btn btn-outline" style="margin-bottom:16px;">🔄 Try Again</button>
         <div class="result-list">${cards}</div>
       </div>` + renderNav(backHash);
     wireTopBar();
@@ -562,18 +562,18 @@
   async function pageProfile() {
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
-        ${Samoyed.render('idle', '這是你的個人資訊～')}
-        <div id="profile-box"><p>載入中…</p></div>
+        ${Samoyed.render('idle', 'Here\'s your profile info!')}
+        <div id="profile-box"><p>Loading...</p></div>
         <div class="profile-section">
-          <h3>📋 問卷管理</h3>
+          <h3>📋 Questionnaire Management</h3>
           <div class="profile-q-actions">
-            <button class="btn btn-sm" id="btn-clear-eat">清除美食問卷</button>
-            <button class="btn btn-sm" id="btn-clear-explore">清除探索問卷</button>
+            <button class="btn btn-sm" id="btn-clear-eat">Clear Food Survey</button>
+            <button class="btn btn-sm" id="btn-clear-explore">Clear Explore Survey</button>
           </div>
         </div>
         <div class="profile-section">
-          <h3>🔄 重新觀看歡迎故事</h3>
-          <button class="btn btn-sm btn-outline" id="btn-replay-onb">重播歡迎動畫</button>
+          <h3>🔄 Rewatch Welcome Story</h3>
+          <button class="btn btn-sm btn-outline" id="btn-replay-onb">Replay Welcome</button>
         </div>
       </div>` + renderNav('#/profile');
     wireTopBar();
@@ -597,11 +597,11 @@
 
     document.getElementById('btn-clear-eat')?.addEventListener('click', () => {
       Questionnaire.clear('eat');
-      alert('已清除美食問卷');
+      alert('Food survey cleared');
     });
     document.getElementById('btn-clear-explore')?.addEventListener('click', () => {
       Questionnaire.clear('explore');
-      alert('已清除探索問卷');
+      alert('Explore survey cleared');
     });
     document.getElementById('btn-replay-onb')?.addEventListener('click', () => {
       localStorage.removeItem(CONFIG.STORAGE_KEY_ONBOARDED);
@@ -612,17 +612,17 @@
   function renderStructured(s) {
     const entries = Object.entries(s).map(([k, v]) => {
       let val = v;
-      if (Array.isArray(v)) val = v.join('、');
-      else if (typeof v === 'object' && v !== null) val = Object.entries(v).map(([sk, sv]) => `${sk}: ${Array.isArray(sv) ? sv.join('、') : sv}`).join(' · ');
+      if (Array.isArray(v)) val = v.join(', ');
+      else if (typeof v === 'object' && v !== null) val = Object.entries(v).map(([sk, sv]) => `${sk}: ${Array.isArray(sv) ? sv.join(', ') : sv}`).join(' · ');
       return `<div class="profile-row"><span class="profile-key">${k}</span><span class="profile-val">${val}</span></div>`;
     }).join('');
-    return `<div class="profile-section"><h3>🗂 詳細資訊</h3>${entries}</div>`;
+    return `<div class="profile-section"><h3>🗂 Details</h3>${entries}</div>`;
   }
 
   /* ===== Pipeline runners ===== */
   async function runEatPipeline(answers) {
     const mode = getMode();
-    pageLoading(mode === 'raw' ? '📊 直接返回附近結果…' : '🧠 懂你 mode 分析中…');
+    pageLoading(mode === 'raw' ? '📊 Getting results nearby...' : '🧠 Analyzing your preferences...');
     try {
       const loc = await Geo.getLocation();
       const payload = {
@@ -649,7 +649,7 @@
 
   async function runExplorePipeline(category, answers) {
     const mode = getMode();
-    pageLoading(mode === 'raw' ? '📊 直接返回附近結果…' : '🧠 懂你 mode 分析中…');
+    pageLoading(mode === 'raw' ? '📊 Getting results nearby...' : '🧠 Analyzing your preferences...');
     try {
       const loc = await Geo.getLocation();
       const payload = {

@@ -34,14 +34,14 @@ const Questionnaire = {
         const savedVal = saved ? saved[q.id] : null;
         const isMulti = !!q.multi;
         const savedArr = isMulti && savedVal ? savedVal.split(', ') : [];
-        h += `<div class="q-group"><p class="q-label"><span class="q-num">${qi + 1}</span>${q.label}${isMulti ? ' <span class="q-multi-hint">（可多選）</span>' : ''}</p><div class="q-options">`;
+        h += `<div class="q-group"><p class="q-label"><span class="q-num">${qi + 1}</span>${q.label}${isMulti ? ' <span class="q-multi-hint">(Multiple choice)</span>' : ''}</p><div class="q-options">`;
         q.options.forEach(opt => {
           const sel = isMulti ? (savedArr.includes(opt) ? ' sel' : '') : (savedVal === opt ? ' sel' : '');
           h += `<span class="q-opt${sel}" data-qid="${q.id}" data-val="${opt}" data-multi="${isMulti}">${opt}</span>`;
         });
         h += '</div></div>';
       });
-      h += `<button type="submit" class="btn btn-primary btn-block" id="q-submit">提交</button></form>`;
+      h += `<button type="submit" class="btn btn-primary btn-block" id="q-submit">Submit</button></form>`;
       return h;
     };
 
@@ -57,8 +57,8 @@ const Questionnaire = {
         <div class="q-saved-banner">
           <div class="q-saved-summary">${summaryChips}</div>
           <div class="q-saved-actions">
-            <button class="btn btn-primary btn-sm" id="q-use-saved">🚀 直接使用</button>
-            <button class="btn btn-sm btn-outline" id="q-toggle-form">✏️ 重新填寫</button>
+            <button class="btn btn-primary btn-sm" id="q-use-saved">🚀 Use This</button>
+            <button class="btn btn-sm btn-outline" id="q-toggle-form">✏️ Edit</button>
           </div>
         </div>
         <details id="q-details">
@@ -91,7 +91,7 @@ const Questionnaire = {
       const details = container.querySelector('#q-details');
       if (details) {
         details.open = !details.open;
-        e.currentTarget.textContent = details.open ? '▲ 收起' : '✏️ 重新填寫';
+        e.currentTarget.textContent = details.open ? '▲ Collapse' : '✏️ Edit';
       }
     });
 

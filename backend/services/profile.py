@@ -22,68 +22,68 @@ def _load_raw_profile() -> str:
 def get_profile_summary() -> dict:
     """Return a structured profile summary for API and LLM consumption."""
     structured = {
-        "暱稱": "Helen",
-        "年齡": "22 歲（水瓶座）",
+        "Nickname": "Helen",
+        "Age": "22 (Aquarius)",
         "MBTI": "INFJ",
-        "語言": "廣東話、國語、英語",
-        "同行者": "和朋友一起來紐約",
-        "喜歡的食物": "芋圓、拉麵、抹茶、港式料理、鼎泰豐、貝果、提拉米蘇、日料、焙茶、酸種麵包、煎餃/鍋貼、綿綿冰、豆花、紫薯、柿子",
-        "不吃": "羊肉、pizza、啤酒",
-        "飲食習慣": "過了八點不吃東西 · 亞洲胃 · 自律",
-        "喜歡的顏色": "紫色、大地色",
-        "喜歡的花": "櫻花",
-        "喜歡的動物": "薩摩耶、貓",
-        "喜歡的季節": "秋天（銀杏、楓葉）",
-        "旅行風格": "高效但不特種兵，喜歡拍照做攻略",
-        "興趣": "唱歌、吉他、烘焙、攝影、Jellycat、Switch、麻將、K歌",
-        "性格": "情商高、獨立堅強、善良溫暖、細心有計畫",
-        "預算": "學生預算，偏性價比",
+        "Languages": "Cantonese, Mandarin, English",
+        "Travel Companions": "Visiting NYC with friends",
+        "Food Likes": "Taro balls, ramen, matcha, Hong Kong cuisine, Din Tai Fung, bagels, tiramisu, Japanese food, hojicha, sourdough, pan-fried dumplings/potstickers, snow ice, tofu pudding, purple yam, persimmon",
+        "Food Dislikes": "Lamb, pizza, beer",
+        "Dietary Habits": "No eating after 8pm · Asian palate · disciplined",
+        "Favorite Colors": "Purple, earth tones",
+        "Favorite Flower": "Cherry blossoms",
+        "Favorite Animals": "Samoyed, cats",
+        "Favorite Season": "Autumn (ginkgo, maple leaves)",
+        "Travel Style": "Efficient but not rushed, enjoys photography and planning",
+        "Hobbies": "Singing, guitar, baking, photography, Jellycat, Switch, mahjong, KTV",
+        "Personality": "High EQ, independent, warm-hearted, thoughtful and organized",
+        "Budget": "Student budget, value-for-money oriented",
     }
 
     return {
         "name": "Helen",
-        "summary": "22 歲，水瓶座，INFJ 🌟 和朋友一起來紐約玩！喜歡芋圓、抹茶、港式料理，不吃羊肉和 pizza，過了八點不吃東西。喜歡紫色和櫻花 🌸 最愛的季節是秋天。",
+        "summary": "22 years old, Aquarius, INFJ 🌟 Visiting NYC with friends! Loves taro balls, matcha, and Hong Kong cuisine. Doesn't eat lamb or pizza, and stops eating after 8pm. Favorite color is purple, loves cherry blossoms 🌸 Favorite season is autumn.",
         "structured": structured,
         # keep flat fields for LLM usage
         "name_zh": "Helen",
         "age": 22,
-        "origin": "在美國讀書的學生",
-        "personality": "INFJ，情商高，獨立，細心有計畫",
-        "travel_style": "高效但不特種兵，喜歡拍照做攻略，怕熱不怕冷",
+        "origin": "Student studying in the US",
+        "personality": "INFJ, high EQ, independent, thoughtful and organized",
+        "travel_style": "Efficient but not rushed, enjoys photography and planning, tolerates cold but not heat",
         "food_likes": [
-            "芋圓", "拉麵", "抹茶", "港式料理", "鼎泰豐", "貝果",
-            "提拉米蘇", "日料", "焙茶", "酸種麵包", "煎餃/鍋貼",
-            "綿綿冰", "豆花", "紫薯", "柿子",
+            "taro balls", "ramen", "matcha", "Hong Kong cuisine", "Din Tai Fung", "bagels",
+            "tiramisu", "Japanese food", "hojicha", "sourdough", "pan-fried dumplings/potstickers",
+            "snow ice", "tofu pudding", "purple yam", "persimmon",
         ],
-        "food_dislikes": ["羊肉", "pizza", "啤酒", "台灣的港式料理"],
+        "food_dislikes": ["lamb", "pizza", "beer", "Hong Kong-style food in Taiwan"],
         "dietary_habits": [
-            "過了八點不吃東西",
-            "亞洲胃",
-            "自律",
-            "午餐經常隨便吃",
+            "No eating after 8pm",
+            "Asian palate",
+            "disciplined",
+            "Often eats casually for lunch",
         ],
-        "travel_companions": "和朋友一起來紐約",
-        "budget": "學生預算，偏性價比",
+        "travel_companions": "Visiting NYC with friends",
+        "budget": "Student budget, value-for-money oriented",
         "favorites": {
-            "colors": ["紫色", "大地色"],
-            "flowers": ["櫻花"],
-            "animals": ["薩摩耶", "貓"],
-            "season": "秋天（銀杏、楓葉）",
+            "colors": ["purple", "earth tones"],
+            "flowers": ["cherry blossoms"],
+            "animals": ["Samoyed", "cats"],
+            "season": "Autumn (ginkgo, maple leaves)",
         },
     }
 
 
 def get_profile_for_llm() -> str:
-    """Return a concise Traditional Chinese text summary of the user profile for LLM prompts."""
+    """Return a concise English text summary of the user profile for LLM prompts."""
     p = get_profile_summary()
-    likes = "、".join(p["food_likes"])
-    dislikes = "、".join(p["food_dislikes"])
-    habits = "；".join(p["dietary_habits"])
+    likes = ", ".join(p["food_likes"])
+    dislikes = ", ".join(p["food_dislikes"])
+    habits = "; ".join(p["dietary_habits"])
 
-    return f"""用戶: {p['name']}，{p['age']}歲，{p['origin']}。
-性格: {p['personality']}。
-旅行風格: {p['travel_style']}。同行者: {p['travel_companions']}。
-喜歡的食物: {likes}。
-不喜歡的食物: {dislikes}。
-飲食習慣: {habits}。
-預算: {p['budget']}。"""
+    return f"""User: {p['name']}, {p['age']} years old, {p['origin']}.
+Personality: {p['personality']}.
+Travel style: {p['travel_style']}. Travel companions: {p['travel_companions']}.
+Food likes: {likes}.
+Food dislikes: {dislikes}.
+Dietary habits: {habits}.
+Budget: {p['budget']}."""

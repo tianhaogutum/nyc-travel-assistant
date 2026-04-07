@@ -80,12 +80,12 @@ const Geo = {
     // gps
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('瀏覽器不支援定位，請改用「自訂座標」'));
+        reject(new Error('Browser does not support geolocation. Please use custom coordinates instead.'));
         return;
       }
       navigator.geolocation.getCurrentPosition(
         pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => reject(new Error('GPS 定位失敗。透過 IP 訪問需 HTTPS 才能使用 GPS，請改用「自訂座標」模式')),
+        () => reject(new Error('GPS location failed. HTTPS is required for GPS access via IP. Please use custom coordinates mode.')),
         { enableHighAccuracy: true, timeout: 10000 }
       );
     });

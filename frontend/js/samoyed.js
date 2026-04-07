@@ -10,14 +10,14 @@ const Samoyed = {
   },
 
   bubbles: {
-    idle:    '嘶～想去哪逛逛？',
-    think:   '讓我了解一下你的口味～',
-    happy:   '找到啦！這些你一定喜歡！',
-    sad:     '呜…附近沒有找到，擴大範圍試試？',
-    loading: '正在幫你找好地方…',
-    explore: '探索模式啟動！',
-    error:   '出了點問題…',
-    night:   '過了八點不吃東西啦～推薦留著明天去！',
+    idle:    'Sigh... What do you want to explore?',
+    think:   'Let me understand your preferences~',
+    happy:   'Found it! You\'ll love these!',
+    sad:     'Woof... Nothing found nearby, try expanding the radius?',
+    loading: 'Finding great places for you...',
+    explore: 'Explore mode activated!',
+    error:   'Something went wrong...',
+    night:   'It\'s past 8pm, no eating after that~ Recommend saving for tomorrow!',
   },
 
   render(state, customBubble) {
@@ -32,12 +32,12 @@ const Samoyed = {
   },
 
   commentForRank(rank) {
-    if (rank === 1) return '🏆 “這家我超推！必去！”';
-    if (rank <= 3) return '💜 “很不錯，強烈推薦～”';
-    if (rank <= 8) return '🐾 “也挺好的～”';
-    if (rank <= 15) return '👀 “可以看看”';
-    if (rank <= 20) return '🤔 “還行吧”';
-    return '💤 "了解一下就好"';
+    if (rank === 1) return '🏆 "This is my top recommendation!"';
+    if (rank <= 3) return '💜 "Really good, highly recommend~"';
+    if (rank <= 8) return '🐾 "Pretty good~"';
+    if (rank <= 15) return '👀 "Worth checking out"';
+    if (rank <= 20) return '🤔 "Not bad"';
+    return '💤 "Just for reference"';
   },
 };
 
