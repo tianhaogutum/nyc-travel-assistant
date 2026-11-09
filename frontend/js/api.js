@@ -65,7 +65,8 @@ const Api = {
 const Geo = {
   // loc_mode: 'gps' | 'test' | 'custom'
   getLocMode() {
-    return localStorage.getItem(CONFIG.STORAGE_KEY_LOC_MODE) || 'test';
+    const mode = localStorage.getItem(CONFIG.STORAGE_KEY_LOC_MODE);
+    return ['gps', 'test', 'custom'].includes(mode) ? mode : 'test';
   },
   setLocMode(m) {
     localStorage.setItem(CONFIG.STORAGE_KEY_LOC_MODE, m);
@@ -77,7 +78,8 @@ const Geo = {
   setTestMode(on) { this.setLocMode(on ? 'test' : 'gps'); },
 
   getTestLocationIndex() {
-    return parseInt(localStorage.getItem(CONFIG.STORAGE_KEY_TEST_LOC) || '0', 10);
+    const index = Number(localStorage.getItem(CONFIG.STORAGE_KEY_TEST_LOC));
+    return Number.isInteger(index) && index >= 0 && index < TEST_LOCATIONS.length ? index : 0;
   },
   setTestLocationIndex(i) {
     localStorage.setItem(CONFIG.STORAGE_KEY_TEST_LOC, String(i));
@@ -87,8 +89,13 @@ const Geo = {
     return { lat: loc.lat, lng: loc.lng };
   },
 
-  getCustomLat() { return parseFloat(localStorage.getItem(CONFIG.STORAGE_KEY_CUSTOM_LAT) || '40.7580'); },
-  getCustomLng() { return parseFloat(localStorage.getItem(CONFIG.STORAGE_KEY_CUSTOM_LNG) || '-73.9855'); },
+  getCustomLat() { return this._coordinate(CONFIG.STORAGE_KEY_CUSTOM_LAT, 40.7580); },
+  getCustomLng() { return this._coordinate(CONFIG.STORAGE_KEY_CUSTOM_LNG, -73.9855); },
+  _coordinate(key, defaultValue) {
+    const value = localStorage.getItem(key);
+    if (value === null) return defaultValue;
+    return value.trim() ? Number(value) : NaN;
+  },
   setCustomLat(v) { localStorage.setItem(CONFIG.STORAGE_KEY_CUSTOM_LAT, v); },
   setCustomLng(v) { localStorage.setItem(CONFIG.STORAGE_KEY_CUSTOM_LNG, v); },
 
@@ -118,7 +125,8 @@ const Geo = {
   },
 
   getDataSource() {
-    return localStorage.getItem(CONFIG.STORAGE_KEY_DS) || CONFIG.DEFAULT_DATA_SOURCE;
+    const source = localStorage.getItem(CONFIG.STORAGE_KEY_DS);
+    return ['manhattan', 'brooklyn'].includes(source) ? source : CONFIG.DEFAULT_DATA_SOURCE;
   },
   setDataSource(ds) {
     localStorage.setItem(CONFIG.STORAGE_KEY_DS, ds);

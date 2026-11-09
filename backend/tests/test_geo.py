@@ -70,3 +70,31 @@ def test_balanced_ranking_and_labels(tmp_path):
 def test_haversine_antipodes_and_same_point():
     assert haversine(40, -73, 40, -73) == 0
     assert haversine(0, 0, 0, 180) == pytest.approx(math.pi * 6371000)
+
+
+def test_bad_database_values_do_not_break_search_or_json_serialization(tmp_path):
+    import json
+
+    path = database(
+        tmp_path,
+        [
+            (None, 40.75, -73.98, 4.5, 20, "cafe"),
+            ("   ", 40.75, -73.98, 4.5, 20, "cafe"),
+            ("Bad latitude", "unknown", -73.98, 4.5, 20, "cafe"),
+            ("Missing metrics", 40.75, -73.98, float("inf"), float("inf"), "cafe"),
+            ("Negative metrics", 40.75, -73.98, -4, -12, "cafe"),
+            ("Valid", 40.75, -73.98, 4.5, 20, "cafe"),
+        ],
+    )
+    for ranking in ("popular", "balanced"):
+        places = cold_filter(path, 40.75, -73.98, 1, ranking=ranking)
+        assert {p["name"] for p in places} == {
+            "Missing metrics",
+            "Negative metrics",
+            "Valid",
+        }
+        for place in places:
+            if place["name"] != "Valid":
+                assert place["rating"] is None
+                assert place["review_count"] == 0
+        json.dumps(places, allow_nan=False)

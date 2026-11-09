@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="review-search")
 _slots = threading.BoundedSemaphore(5)
 _cache = OrderedDict()
+_inflight = {}
 _cache_lock = threading.Lock()
 CACHE_TTL = 900
 CACHE_SIZE = 256
@@ -38,46 +39,77 @@ def _search_one(place_name: str, max_results: int = 3) -> list[str]:
         return []
 
 
-def _cached_search(name):
-    snippets = _search_one(name)
+def _finish_search(name, future, slots):
+    try:
+        try:
+            snippets = future.result()
+        except Exception:
+            snippets = []
+        with _cache_lock:
+            _cache[name] = (time.monotonic(), tuple(snippets))
+            _cache.move_to_end(name)
+            while len(_cache) > CACHE_SIZE:
+                _cache.popitem(last=False)
+            if _inflight.get(name) is future:
+                del _inflight[name]
+    finally:
+        # Only the owning search releases the real thread's slot, including
+        # when every request waiting for it has been cancelled.
+        slots.release()
+
+
+def _get_or_start_search(name):
     with _cache_lock:
-        _cache[name] = (time.monotonic(), tuple(snippets))
-        _cache.move_to_end(name)
-        while len(_cache) > CACHE_SIZE:
-            _cache.popitem(last=False)
-    return snippets
+        cached = _cache.get(name)
+        if cached and time.monotonic() - cached[0] < CACHE_TTL:
+            return list(cached[1]), None
+        future = _inflight.get(name)
+        if future is not None:
+            return None, future
+        slots = _slots
+        if not slots.acquire(blocking=False):
+            return None, None
+        try:
+            future = _executor.submit(_search_one, name)
+        except BaseException:
+            slots.release()
+            raise
+        _inflight[name] = future
+    # add_done_callback can run synchronously for an already finished search,
+    # so register outside the cache lock.
+    future.add_done_callback(lambda done: _finish_search(name, done, slots))
+    return None, future
 
 
 async def search_negative_reviews(place_names: list[str]) -> dict[str, list[str]]:
-    # Slots are released when the real thread completes, not when an awaiting
-    # request is cancelled. Overload skips optional searches instead of queuing.
+    """Share in-flight work across requests without sharing their cancellation."""
     deadline = time.monotonic() + SEARCH_BUDGET_SECONDS
     results = {}
 
     async def search(name):
-        with _cache_lock:
-            cached = _cache.get(name)
-            if cached and time.monotonic() - cached[0] < CACHE_TTL:
-                results[name] = list(cached[1])
-                return
         while True:
             if time.monotonic() >= deadline:
                 results[name] = []
                 return
-            if _slots.acquire(blocking=False):
+            cached, future = _get_or_start_search(name)
+            if cached is not None:
+                results[name] = cached
+                return
+            if future is not None:
                 break
-            await asyncio.sleep(0.05)
-        try:
-            future = _executor.submit(_cached_search, name)
-        except BaseException:
-            _slots.release()
-            raise
-        future.add_done_callback(lambda _, slots=_slots: slots.release())
+            if time.monotonic() >= deadline:
+                results[name] = []
+                return
+            await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
         try:
             remaining = max(0, deadline - time.monotonic())
-            results[name] = await asyncio.wait_for(
-                asyncio.wrap_future(future), remaining
+            wrapped = asyncio.wrap_future(future)
+            # Consume any late exception even if all request waiters leave.
+            wrapped.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
             )
+            snippets = await asyncio.wait_for(asyncio.shield(wrapped), remaining)
+            results[name] = list(snippets)
         except Exception:
             results[name] = []
 

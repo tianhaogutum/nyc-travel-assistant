@@ -77,11 +77,12 @@
 
   /* ===== top bar (data source + test mode) ===== */
   function getRadius() {
-    return parseFloat(localStorage.getItem(CONFIG.STORAGE_KEY_RADIUS)) || CONFIG.DEFAULT_RADIUS;
+    const value = Number(localStorage.getItem(CONFIG.STORAGE_KEY_RADIUS));
+    return Number.isFinite(value) && value >= 0.5 && value <= 100 ? value : CONFIG.DEFAULT_RADIUS;
   }
   function setRadius(v) { localStorage.setItem(CONFIG.STORAGE_KEY_RADIUS, v); }
   function getMode() {
-    return localStorage.getItem(CONFIG.STORAGE_KEY_MODE) || 'ai';
+    return localStorage.getItem(CONFIG.STORAGE_KEY_MODE) === 'raw' ? 'raw' : 'ai';
   }
   function setMode(v) { localStorage.setItem(CONFIG.STORAGE_KEY_MODE, v); }
 
@@ -96,18 +97,19 @@
     const customLng = Geo.getCustomLng();
 
     return `<div class="topbar">
-      <select id="sel-ds" class="topbar-select">
+      <select id="sel-ds" aria-label="Area" class="topbar-select">
         <option value="manhattan"${ds === 'manhattan' ? ' selected' : ''}>Manhattan</option>
         <option value="brooklyn"${ds === 'brooklyn' ? ' selected' : ''}>Brooklyn</option>
       </select>
-      <div class="loc-mode-toggle">
-        <button class="loc-btn${mode === 'test' ? ' active' : ''}" data-mode="test">🧪 Test</button>
-        <button class="loc-btn${mode === 'custom' ? ' active' : ''}" data-mode="custom">✏️ Customize</button>
+      <div class="loc-mode-toggle" role="group" aria-label="Location mode">
+        <button class="loc-btn${mode === 'gps' ? ' active' : ''}" aria-pressed="${mode === 'gps'}" data-mode="gps">📍 GPS</button>
+        <button class="loc-btn${mode === 'test' ? ' active' : ''}" aria-pressed="${mode === 'test'}" data-mode="test">🧪 Test</button>
+        <button class="loc-btn${mode === 'custom' ? ' active' : ''}" aria-pressed="${mode === 'custom'}" data-mode="custom">✏️ Customize</button>
       </div>
-      ${mode === 'test' ? `<div id="loc-sub"><select id="sel-test-loc" class="topbar-select">${locOpts}</select></div>` : ''}
+      ${mode === 'test' ? `<div id="loc-sub"><select id="sel-test-loc" aria-label="Test location" class="topbar-select">${locOpts}</select></div>` : ''}
       ${mode === 'custom' ? `<div id="loc-sub"><div class="custom-loc-inputs">
-        <input id="inp-lat" class="loc-input" type="number" step="0.0001" placeholder="Latitude" value="${customLat}">
-        <input id="inp-lng" class="loc-input" type="number" step="0.0001" placeholder="Longitude" value="${customLng}">
+        <input id="inp-lat" aria-label="Latitude" min="-90" max="90" class="loc-input" type="number" step="0.0001" placeholder="Latitude" value="${Number.isFinite(customLat) ? customLat : ''}">
+        <input id="inp-lng" aria-label="Longitude" min="-180" max="180" class="loc-input" type="number" step="0.0001" placeholder="Longitude" value="${Number.isFinite(customLng) ? customLng : ''}">
       </div></div>` : ''}
     </div>`;
   }
@@ -137,8 +139,8 @@
 
     const inpLat = document.getElementById('inp-lat');
     const inpLng = document.getElementById('inp-lng');
-    if (inpLat) inpLat.addEventListener('change', () => Geo.setCustomLat(inpLat.value));
-    if (inpLng) inpLng.addEventListener('change', () => Geo.setCustomLng(inpLng.value));
+    if (inpLat) inpLat.addEventListener('input', () => Geo.setCustomLat(inpLat.value));
+    if (inpLng) inpLng.addEventListener('input', () => Geo.setCustomLng(inpLng.value));
   }
 
   /* ===== nav footer ===== */
@@ -182,7 +184,7 @@
     return `
       <div class="pipe-settings">
         <div class="pipe-row">
-          <label class="pipe-label">📍 Search Radius</label>
+          <label class="pipe-label" for="inp-radius">📍 Search Radius</label>
           <div class="pipe-radius">
             <input type="range" id="inp-radius" min="0.5" max="100" step="0.5" value="${r}">
             <span id="lbl-radius">${r} km</span>
@@ -200,6 +202,7 @@
   }
 
   let _selectedLabels = [];
+  const labelSelections = new Map();
 
   const LABEL_EN = {
     american_restaurant: 'American Restaurant',
@@ -295,17 +298,20 @@
     labelRequest?.abort();
     const controller = new AbortController();
     labelRequest = controller;
-    _selectedLabels = [];
+    const scope = `${dataSource}:${category}`;
+    _selectedLabels = [...(labelSelections.get(scope) || [])];
     container.textContent = 'Loading...';
     try {
       const data = await Api.get(`/api/labels?data_source=${dataSource}&category=${category}`, controller.signal);
       if (controller.signal.aborted || !container.isConnected) return;
       const labels = data.labels || [];
+      _selectedLabels = _selectedLabels.filter(value => labels.some(label => label.label === value));
+      labelSelections.set(scope, [..._selectedLabels]);
       if (!labels.length) { container.innerHTML = '<span class="pipe-hint">No categories available</span>'; return; }
 
       const optItems = labels.map(l =>
         `<label class="label-option">
-          <input type="checkbox" value="${Html.escape(l.label)}">
+          <input type="checkbox" value="${Html.escape(l.label)}"${_selectedLabels.includes(l.label) ? ' checked' : ''}>
           <span>${Html.escape(_labelDisplay(l.label))}</span>
           <span class="label-count">${Html.escape(l.count)}</span>
         </label>`
@@ -315,7 +321,7 @@
         <button class="label-toggle-btn" id="label-toggle-btn" aria-expanded="false" aria-controls="label-dropdown">All Categories ▼</button>
         <div class="label-dropdown" id="label-dropdown" hidden>
           <label class="label-option label-clear">
-            <input type="checkbox" id="label-all" checked>
+            <input type="checkbox" id="label-all"${_selectedLabels.length ? '' : ' checked'}>
             <span>All (No Filter)</span>
           </label>
           ${optItems}
@@ -324,6 +330,14 @@
       const dropdown = container.querySelector('#label-dropdown');
       const toggleBtn = container.querySelector('#label-toggle-btn');
       const allChk = container.querySelector('#label-all');
+      _updateLabelToggleText();
+      container.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          dropdown.hidden = true;
+          toggleBtn.setAttribute('aria-expanded', 'false');
+          toggleBtn.focus();
+        }
+      }, { signal: controller.signal });
 
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -340,13 +354,16 @@
             _selectedLabels = _selectedLabels.filter(v => v !== chk.value);
             if (_selectedLabels.length === 0) allChk.checked = true;
           }
+          labelSelections.set(scope, [..._selectedLabels]);
           _updateLabelToggleText();
         });
       });
 
       allChk.addEventListener('change', () => {
-        if (allChk.checked) {
+        if (allChk.checked || _selectedLabels.length === 0) {
+          allChk.checked = true;
           _selectedLabels = [];
+          labelSelections.set(scope, []);
           container.querySelectorAll('input[type=checkbox]:not(#label-all)').forEach(c => c.checked = false);
           _updateLabelToggleText();
         }
@@ -430,7 +447,6 @@
         window._exploreCategory = el.dataset.cat;
         document.querySelectorAll('.cat-card').forEach(c => c.classList.remove('selected'));
         el.classList.add('selected');
-        _selectedLabels = [];
         const panel = document.getElementById('explore-action-panel');
         if (panel) panel.style.display = '';
         loadLabels(Geo.getDataSource(), el.dataset.cat);
@@ -445,9 +461,13 @@
     document.getElementById('btn-ai-explore')?.addEventListener('click', () => {
       location.hash = '#/explore/questionnaire';
     });
-    _selectedLabels = [];
-    labelCategory = null;
-    document.getElementById('label-container').textContent = 'Choose a category above.';
+    const selectedCategory = document.querySelector(`.cat-card[data-cat="${window._exploreCategory || ''}"]`);
+    if (selectedCategory) selectedCategory.click();
+    else {
+      _selectedLabels = [];
+      labelCategory = null;
+      document.getElementById('label-container').textContent = 'Choose an exploration category.';
+    }
 
     document.querySelectorAll('.mode-btn').forEach(btn => {
       btn.addEventListener('click', () => pageExplore());
@@ -618,6 +638,19 @@
       </div>` + renderNav('#/profile');
     wireTopBar();
 
+    document.getElementById('btn-clear-eat')?.addEventListener('click', () => {
+      Questionnaire.clear('eat');
+      alert('Food survey cleared');
+    });
+    document.getElementById('btn-clear-explore')?.addEventListener('click', () => {
+      Questionnaire.clear('explore');
+      alert('Explore survey cleared');
+    });
+    document.getElementById('btn-replay-onb')?.addEventListener('click', () => {
+      localStorage.removeItem(CONFIG.STORAGE_KEY_ONBOARDED);
+      location.hash = '#/welcome';
+    });
+
     const controller = new AbortController();
     activeRequest = controller;
     const box = document.getElementById('profile-box');
@@ -636,19 +669,6 @@
       if (controller.signal.aborted || !box.isConnected) return;
       if (box) box.innerHTML = `<p class="err">無法載入 profile：${Html.escape(e.message)}</p>`;
     }
-
-    document.getElementById('btn-clear-eat')?.addEventListener('click', () => {
-      Questionnaire.clear('eat');
-      alert('Food survey cleared');
-    });
-    document.getElementById('btn-clear-explore')?.addEventListener('click', () => {
-      Questionnaire.clear('explore');
-      alert('Explore survey cleared');
-    });
-    document.getElementById('btn-replay-onb')?.addEventListener('click', () => {
-      localStorage.removeItem(CONFIG.STORAGE_KEY_ONBOARDED);
-      location.hash = '#/welcome';
-    });
   }
 
   function renderStructured(s) {
@@ -678,7 +698,7 @@
     const backHash = `#/${kind}`;
     const payload = {
       radius_km: getRadius(), data_source: Geo.getDataSource(), mode,
-      labels: [..._selectedLabels], questionnaire: answers,
+      labels: [...(labelSelections.get(`${Geo.getDataSource()}:${category || 'food_drink'}`) || [])], questionnaire: answers,
       ...(category ? { category } : {}),
     };
     let lastResult = null;

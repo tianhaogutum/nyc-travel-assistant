@@ -1,6 +1,6 @@
 """POST /api/explore — Explore Pipeline API."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from services.pipeline import (
     run_explore_pipeline,
@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.post("/explore", response_model=PipelineResponse)
-async def explore(req: ExploreRequest):
+async def explore(req: ExploreRequest, request: Request):
     if req.mode == "raw":
         result = await run_raw_explore_pipeline(
             latitude=req.latitude,
@@ -32,13 +32,14 @@ async def explore(req: ExploreRequest):
             data_source=req.data_source,
             category=req.category,
             questionnaire=req.questionnaire,
+            llm_client=getattr(request.app.state, "llm_client", None),
             labels=req.labels or None,
         )
     return result
 
 
 @router.post("/explore/stream")
-async def explore_stream(req: ExploreRequest):
+async def explore_stream(req: ExploreRequest, request: Request):
     return StreamingResponse(
         stream_explore_pipeline(
             latitude=req.latitude,
@@ -47,6 +48,7 @@ async def explore_stream(req: ExploreRequest):
             data_source=req.data_source,
             category=req.category,
             questionnaire=req.questionnaire or {},
+            llm_client=getattr(request.app.state, "llm_client", None),
             labels=req.labels or None,
             raw=req.mode == "raw",
         ),

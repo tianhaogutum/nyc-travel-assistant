@@ -1,5 +1,6 @@
 """NYC Travel Intelligence Engine — FastAPI backend."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from api.eat import router as eat_router
@@ -18,8 +19,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.geo import get_labels
+from services.llm import create_llm_client, is_llm_configured
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with create_llm_client() as client:
+        app.state.llm_client = client
+        try:
+            yield
+        finally:
+            app.state.llm_client = None
+
 
 app = FastAPI(
+    lifespan=lifespan,
     title="NYC Travel Intelligence Engine",
     version="0.2.0",
     description="AI-powered NYC restaurant & attraction recommendations for Chinese tourists",
@@ -47,10 +61,19 @@ async def llm_provider():
             "provider": "ollama",
             "model": OLLAMA_MODEL,
             "base_url": OLLAMA_BASE_URL,
+            "configured": is_llm_configured(),
         }
     if LLM_PROVIDER == "anthropic":
-        return {"provider": "anthropic", "model": ANTHROPIC_MODEL}
-    return {"provider": "azure", "model": AZURE_DEPLOYMENT}
+        return {
+            "provider": "anthropic",
+            "model": ANTHROPIC_MODEL,
+            "configured": is_llm_configured(),
+        }
+    return {
+        "provider": LLM_PROVIDER,
+        "model": AZURE_DEPLOYMENT if LLM_PROVIDER == "azure" else None,
+        "configured": is_llm_configured(),
+    }
 
 
 @app.get("/api/labels")

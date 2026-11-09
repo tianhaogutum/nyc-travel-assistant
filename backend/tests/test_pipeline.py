@@ -66,6 +66,7 @@ def test_parser_fences_and_trailing_prose():
 
 
 def setup_pipeline(monkeypatch, places=None):
+    monkeypatch.setattr(p, "is_llm_configured", lambda: True)
     monkeypatch.setattr(p, "_resolve_db", lambda *args: "fake.db")
     monkeypatch.setattr(
         p,
@@ -140,7 +141,7 @@ def test_heartbeat_and_disconnect_cancels_enrichment(monkeypatch):
     async def check():
         cancelled = asyncio.Event()
 
-        async def slow(*args):
+        async def slow(*args, **kwargs):
             try:
                 await asyncio.sleep(60)
             finally:
@@ -154,3 +155,67 @@ def test_heartbeat_and_disconnect_cancels_enrichment(monkeypatch):
         assert cancelled.is_set()
 
     asyncio.run(check())
+
+
+def test_missing_configuration_skips_all_optional_work(monkeypatch):
+    setup_pipeline(monkeypatch)
+    monkeypatch.setattr(p, "is_llm_configured", lambda: False)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Optional editorial lookup should be skipped")
+
+    monkeypatch.setattr(p, "query_online_recommendations", unexpected)
+    result = asyncio.run(p.run_eat_pipeline(40.75, -73.98, 1, "manhattan", {}))
+    assert result["ranking_method"] == "fallback"
+    assert len(result["rankings"]) == 2
+    p.search_negative_reviews.assert_not_awaited()
+    p.call_llm.assert_not_awaited()
+
+
+def test_optional_failures_do_not_prevent_ai_ranking_and_pass_shared_client(
+    monkeypatch,
+):
+    setup_pipeline(monkeypatch)
+    p.search_negative_reviews.side_effect = RuntimeError("search offline")
+
+    def unavailable(*args, **kwargs):
+        raise OSError("editorial unavailable")
+
+    monkeypatch.setattr(p, "query_online_recommendations", unavailable)
+    shared = object()
+    result = asyncio.run(
+        p.run_eat_pipeline(40.75, -73.98, 1, "manhattan", {}, llm_client=shared)
+    )
+    assert result["ranking_method"] == "ai"
+    assert result["rankings"][0]["place_id"] == "b"
+    assert p.call_llm.call_args.kwargs["client"] is shared
+
+
+def test_database_failure_finishes_json_and_stream_cleanly(monkeypatch):
+    import sqlite3
+
+    setup_pipeline(monkeypatch)
+
+    def unavailable(*args, **kwargs):
+        raise sqlite3.DatabaseError("corrupt local database")
+
+    monkeypatch.setattr(p, "cold_filter", unavailable)
+    with TestClient(app) as client:
+        for kind in ("eat", "explore"):
+            for mode in ("ai", "raw"):
+                payload = {"latitude": 40.75, "longitude": -73.98, "mode": mode}
+                response = client.post("/api/" + kind, json=payload)
+                assert response.status_code == 200
+                assert response.json()["ranking_method"] == "error"
+                assert response.json()["error"]
+                stream = client.post("/api/" + kind + "/stream", json=payload).text
+                assert '"type": "error"' in stream
+                assert stream.endswith("data: [DONE]\n\n")
+    p.call_llm.assert_not_awaited()
+
+
+def test_parser_skips_citations_and_rejects_unbounded_work():
+    expected = [{"place_id": "a"}]
+    assert p._parse_llm_response('Reference [1]. []\n[{"place_id":"a"}]') == expected
+    assert p._parse_llm_response(" " * 200001) == []
+    assert p._parse_llm_response("[" * 2000 + "]" * 2000) == []

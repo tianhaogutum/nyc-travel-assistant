@@ -3,13 +3,15 @@
 import asyncio
 import json
 import logging
+import re
+import sqlite3
 import time
 from typing import Optional
 
 from config import DB_MAP, TOP_N
 
 from services.geo import cold_filter, query_online_recommendations
-from services.llm import call_llm
+from services.llm import call_llm, is_llm_configured
 from services.profile import get_profile_for_llm
 from services.web_search import search_negative_reviews
 
@@ -269,19 +271,21 @@ def _build_explore_prompt(
 
 
 def _parse_llm_response(text: str) -> list[dict]:
-    """Decode the first valid array, tolerating fences but not malformed rows."""
-    if not isinstance(text, str):
+    """Extract bounded JSON output, skipping prose citations such as [1]."""
+    if not isinstance(text, str) or len(text) > 200_000:
         return []
     decoder = json.JSONDecoder()
-    for index, char in enumerate(text):
-        if char != "[":
-            continue
+    for attempt, match in enumerate(re.finditer(r"\[", text)):
+        if attempt >= 16:
+            break
         try:
-            value, _ = decoder.raw_decode(text[index:])
-        except ValueError:
+            value, _ = decoder.raw_decode(text[match.start() :])
+        except (ValueError, RecursionError):
             continue
         if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
+            rows = [item for item in value if isinstance(item, dict)]
+            if rows:
+                return rows
     return []
 
 
@@ -366,8 +370,17 @@ HEARTBEAT_SECONDS = 10
 
 
 async def _ai_rank(
-    places, latitude, longitude, radius_km, category, questionnaire, labels
+    places,
+    latitude,
+    longitude,
+    radius_km,
+    category,
+    questionnaire,
+    labels,
+    llm_client=None,
 ):
+    if not is_llm_configured():
+        return _fallback_rankings(places), "fallback"
     neg_reviews, online_recs = await asyncio.gather(
         search_negative_reviews([p["name"] for p in places]),
         asyncio.to_thread(
@@ -378,7 +391,17 @@ async def _ai_rank(
             radius_km,
             labels=labels,
         ),
+        return_exceptions=True,
     )
+    for result in (neg_reviews, online_recs):
+        if isinstance(result, asyncio.CancelledError):
+            raise result
+    if isinstance(neg_reviews, Exception):
+        logger.warning("Optional review search unavailable")
+        neg_reviews = {}
+    if isinstance(online_recs, Exception):
+        logger.warning("Optional editorial dataset unavailable")
+        online_recs = []
     # Local dataset wins for duplicate editorial entries.
     candidates = {p["place_id"]: p for p in places}
     for p in online_recs:
@@ -395,7 +418,7 @@ async def _ai_rank(
         if category == "food_drink"
         else _build_explore_prompt(*args, category, *extras)
     )
-    items = _parse_llm_response(await call_llm(prompt))
+    items = _parse_llm_response(await call_llm(prompt, client=llm_client))
     # An entirely fabricated/malformed response is a fallback, not an AI success.
     ids = set(candidates)
     names = [p["name"] for p in candidates.values()]
@@ -422,6 +445,7 @@ async def _pipeline_events(
     questionnaire=None,
     labels=None,
     raw=False,
+    llm_client=None,
 ):
     started = time.perf_counter()
     meta = {"radius_km": radius_km, "data_source": data_source}
@@ -445,16 +469,25 @@ async def _pipeline_events(
             [], "error", error=f"Database not found for {data_source}/{category}"
         )
         return
-    places = await asyncio.to_thread(
-        cold_filter,
-        path,
-        latitude,
-        longitude,
-        radius_km,
-        limit=RAW_LIMIT if raw else TOP_N,
-        labels=labels,
-        ranking="popular" if raw else "balanced",
-    )
+    try:
+        places = await asyncio.to_thread(
+            cold_filter,
+            path,
+            latitude,
+            longitude,
+            radius_km,
+            limit=RAW_LIMIT if raw else TOP_N,
+            labels=labels,
+            ranking="popular" if raw else "balanced",
+        )
+    except (sqlite3.Error, OSError):
+        logger.warning("Local place dataset unavailable")
+        yield event(
+            [],
+            "error",
+            error="Place data is temporarily unavailable. Please try again.",
+        )
+        return
     if raw or not places:
         yield event(_raw_rankings(places), "raw" if raw else "empty")
         return
@@ -468,6 +501,7 @@ async def _pipeline_events(
             category,
             questionnaire or {},
             labels,
+            llm_client=llm_client,
         )
     except Exception:
         logger.exception("AI enrichment failed; retaining local recommendations")
@@ -504,7 +538,13 @@ async def _stream_pipeline(**kwargs):
 
 
 async def run_eat_pipeline(
-    latitude, longitude, radius_km, data_source, questionnaire, labels=None
+    latitude,
+    longitude,
+    radius_km,
+    data_source,
+    questionnaire,
+    labels=None,
+    llm_client=None,
 ):
     return await _run_pipeline(
         latitude=latitude,
@@ -513,12 +553,20 @@ async def run_eat_pipeline(
         data_source=data_source,
         category="food_drink",
         questionnaire=questionnaire,
+        llm_client=llm_client,
         labels=labels,
     )
 
 
 async def run_explore_pipeline(
-    latitude, longitude, radius_km, data_source, category, questionnaire, labels=None
+    latitude,
+    longitude,
+    radius_km,
+    data_source,
+    category,
+    questionnaire,
+    labels=None,
+    llm_client=None,
 ):
     return await _run_pipeline(
         latitude=latitude,
@@ -527,6 +575,7 @@ async def run_explore_pipeline(
         data_source=data_source,
         category=category,
         questionnaire=questionnaire,
+        llm_client=llm_client,
         labels=labels,
     )
 
@@ -560,7 +609,14 @@ async def run_raw_explore_pipeline(
 
 
 def stream_eat_pipeline(
-    latitude, longitude, radius_km, data_source, questionnaire, labels=None, raw=False
+    latitude,
+    longitude,
+    radius_km,
+    data_source,
+    questionnaire,
+    labels=None,
+    raw=False,
+    llm_client=None,
 ):
     return _stream_pipeline(
         latitude=latitude,
@@ -569,6 +625,7 @@ def stream_eat_pipeline(
         data_source=data_source,
         category="food_drink",
         questionnaire=questionnaire,
+        llm_client=llm_client,
         labels=labels,
         raw=raw,
     )
@@ -583,6 +640,7 @@ def stream_explore_pipeline(
     questionnaire,
     labels=None,
     raw=False,
+    llm_client=None,
 ):
     return _stream_pipeline(
         latitude=latitude,
@@ -591,6 +649,7 @@ def stream_explore_pipeline(
         data_source=data_source,
         category=category,
         questionnaire=questionnaire,
+        llm_client=llm_client,
         labels=labels,
         raw=raw,
     )

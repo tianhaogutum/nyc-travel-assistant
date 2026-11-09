@@ -1,5 +1,7 @@
-"""LLM service — supports Azure OpenAI (via BricksLLM proxy), Ollama, and Anthropic."""
+"""Bounded, reusable HTTP transport for Azure, Ollama and Anthropic."""
 
+import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -18,132 +20,148 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
+MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_CONNECTIONS = 5
 
 
-async def call_llm(prompt: str, deployment: Optional[str] = None) -> str:
-    """Send a prompt to the configured LLM provider and return the text reply.
-
-    Provider is selected by the LLM_PROVIDER config ("azure" or "ollama").
-    Returns empty string on failure so the pipeline can fall back to cold ranking.
-    """
-    if LLM_PROVIDER == "ollama":
-        return await _call_ollama(prompt, model=deployment)
-    if LLM_PROVIDER == "anthropic":
-        if not ANTHROPIC_API_KEY:
-            return ""
-        return await _call_anthropic(prompt)
-    if LLM_PROVIDER != "azure" or not AZURE_API_KEY or not AZURE_ENDPOINT:
-        return ""
-    return await _call_azure(prompt, deployment=deployment)
+def is_llm_configured() -> bool:
+    """Report configuration readiness, without a network request or secret output."""
+    required = {
+        "anthropic": (ANTHROPIC_API_KEY, ANTHROPIC_MODEL),
+        "azure": (AZURE_API_KEY, AZURE_ENDPOINT, AZURE_DEPLOYMENT),
+        "ollama": (OLLAMA_BASE_URL, OLLAMA_MODEL),
+    }.get(LLM_PROVIDER)
+    return bool(required and all(value.strip() for value in required))
 
 
-async def _call_azure(prompt: str, deployment: Optional[str] = None) -> str:
-    deployment = deployment or AZURE_DEPLOYMENT
-    url = (
-        f"{AZURE_ENDPOINT}/api/providers/azure/openai/deployments/{deployment}"
-        f"/chat/completions?api-version={AZURE_API_VERSION}"
+def create_llm_client() -> httpx.AsyncClient:
+    """The application owns and closes this pool through its lifespan."""
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(LLM_TIMEOUT, connect=10, write=10, pool=2),
+        limits=httpx.Limits(
+            max_connections=MAX_CONNECTIONS,
+            max_keepalive_connections=MAX_CONNECTIONS,
+            keepalive_expiry=60,
+        ),
+        follow_redirects=False,
     )
-    headers = {
-        "Authorization": f"Bearer {AZURE_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_completion_tokens": 4096,
-    }
 
-    try:
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
-    except httpx.TimeoutException:
-        logger.warning("Azure OpenAI request timed out after %ds", LLM_TIMEOUT)
-        return ""
-    except httpx.ConnectError:
-        logger.error("Cannot connect to Azure endpoint: %s", AZURE_ENDPOINT)
-        return ""
-    except (KeyError, IndexError):
-        logger.error("Unexpected Azure response format")
-        return ""
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Azure API error %d: %s", exc.response.status_code, exc.response.text[:200]
+
+def _request_spec(prompt: str, deployment: Optional[str]):
+    if LLM_PROVIDER == "ollama":
+        return (
+            f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat",
+            {},
+            {
+                "model": deployment or OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.7, "num_predict": 16384},
+            },
         )
-        return ""
-    except Exception as exc:
-        logger.error("Azure OpenAI call failed: %s", exc)
-        return ""
-
-
-async def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
-    model = model or OLLAMA_MODEL
-    url = f"{OLLAMA_BASE_URL}/api/chat"
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"temperature": 0.7, "num_predict": 16384},
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["message"]["content"]
-    except httpx.TimeoutException:
-        logger.warning("Ollama request timed out after %ds", LLM_TIMEOUT)
-        return ""
-    except httpx.ConnectError:
-        logger.error("Cannot connect to Ollama at: %s", OLLAMA_BASE_URL)
-        return ""
-    except (KeyError, IndexError):
-        logger.error("Unexpected Ollama response format")
-        return ""
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Ollama API error %d: %s", exc.response.status_code, exc.response.text[:200]
+    if LLM_PROVIDER == "anthropic":
+        return (
+            "https://api.anthropic.com/v1/messages",
+            {"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01"},
+            {
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": 4096,
+                "messages": [{"role": "user", "content": prompt}],
+            },
         )
-        return ""
-    except Exception as exc:
-        logger.error("Ollama call failed: %s", exc)
-        return ""
+    return (
+        f"{AZURE_ENDPOINT.rstrip('/')}/api/providers/azure/openai/deployments/"
+        f"{deployment or AZURE_DEPLOYMENT}/chat/completions?api-version={AZURE_API_VERSION}",
+        {"Authorization": f"Bearer {AZURE_API_KEY}"},
+        {
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_completion_tokens": 4096,
+        },
+    )
 
 
-async def _call_anthropic(prompt: str) -> str:
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    payload = {
-        "model": ANTHROPIC_MODEL,
-        "max_tokens": 4096,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    try:
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages", json=payload, headers=headers
-            )
-            resp.raise_for_status()
-            return resp.json()["content"][0]["text"]
-    except httpx.TimeoutException:
-        logger.warning("Anthropic request timed out after %ds", LLM_TIMEOUT)
-        return ""
-    except (KeyError, IndexError):
-        logger.error("Unexpected Anthropic response format")
-        return ""
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Anthropic API error %d: %s",
-            exc.response.status_code,
-            exc.response.text[:200],
+def _extract_text(data: object) -> str:
+    if not isinstance(data, dict):
+        raise ValueError("Invalid response object")
+    if LLM_PROVIDER == "anthropic":
+        if data.get("stop_reason") in ("max_tokens", "refusal", "pause_turn"):
+            return ""
+        blocks = data.get("content")
+        if not isinstance(blocks, list):
+            raise ValueError("Invalid content blocks")
+        # Thinking/tool blocks are not recommendation text; text may span blocks.
+        text = "\n".join(
+            block["text"]
+            for block in blocks
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
         )
+    elif LLM_PROVIDER == "ollama":
+        if data.get("done_reason") == "length" or data.get("done") is False:
+            return ""
+        message = data.get("message")
+        text = message.get("content") if isinstance(message, dict) else None
+    else:
+        choices = data.get("choices")
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not isinstance(choices[0], dict)
+        ):
+            raise ValueError("Invalid choices")
+        choice = choices[0]
+        if choice.get("finish_reason") in ("length", "content_filter"):
+            return ""
+        message = choice.get("message")
+        text = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(text, str):
+        raise ValueError("Invalid text content")
+    return text.strip()
+
+
+async def _send(
+    client: httpx.AsyncClient, prompt: str, deployment: Optional[str]
+) -> str:
+    url, headers, payload = _request_spec(prompt, deployment)
+    async with client.stream("POST", url, json=payload, headers=headers) as response:
+        response.raise_for_status()
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
+                raise ValueError("Response exceeds size limit")
+            body.extend(chunk)
+        return _extract_text(json.loads(body))
+
+
+async def call_llm(
+    prompt: str,
+    deployment: Optional[str] = None,
+    *,
+    client: Optional[httpx.AsyncClient] = None,
+) -> str:
+    """Return text or a fallback sentinel; cancellation always propagates.
+
+    The deadline includes pool admission and the entire response, not just idle
+    time between chunks. Requests are not replayed automatically: an ambiguous
+    transport failure may already have incurred a billable generation.
+    """
+    if not is_llm_configured():
         return ""
-    except Exception as exc:
-        logger.error("Anthropic call failed: %s", exc)
-        return ""
+    try:
+        async with asyncio.timeout(LLM_TIMEOUT):
+            if client is not None:
+                return await _send(client, prompt, deployment)
+            # CLI/direct service users do not require an application lifespan.
+            async with create_llm_client() as owned_client:
+                return await _send(owned_client, prompt, deployment)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("%s LLM HTTP status %d", LLM_PROVIDER, exc.response.status_code)
+    except (httpx.HTTPError, TimeoutError, ValueError, TypeError, RecursionError):
+        # Never log provider response bodies or exception messages: either may
+        # contain prompts, preferences, credentials or upstream diagnostic data.
+        logger.warning(
+            "%s LLM request failed or returned invalid content", LLM_PROVIDER
+        )
+    return ""

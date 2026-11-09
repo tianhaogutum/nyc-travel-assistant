@@ -70,19 +70,53 @@ def place_id(place: dict) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:20]
 
 
+def _finite_number(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def filter_by_radius(
     places: list[dict], lat: float, lon: float, radius_km: float
 ) -> list[dict]:
     result = []
     for p in places:
-        p_lat, p_lon = p.get("latitude"), p.get("longitude")
-        if p_lat is None or p_lon is None:
+        name = p.get("name")
+        p_lat = _finite_number(p.get("latitude"))
+        p_lon = _finite_number(p.get("longitude"))
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or p_lat is None
+            or p_lon is None
+        ):
             continue
         if not (-90 <= p_lat <= 90 and -180 <= p_lon <= 180):
             continue
         dist = haversine(lat, lon, p_lat, p_lon)
-        if dist <= radius_km * 1000:
-            result.append({**p, "distance_m": round(dist), "place_id": place_id(p)})
+        if dist > radius_km * 1000:
+            continue
+        rating = _finite_number(p.get("rating"))
+        count = _finite_number(p.get("review_count"))
+        # SQLite permits mixed types even in numeric columns. Invalid optional
+        # metrics are missing evidence, not a reason to lose the whole search.
+        clean = {
+            **p,
+            "name": name.strip(),
+            "latitude": p_lat,
+            "longitude": p_lon,
+            "rating": rating if rating is not None and 0 <= rating <= 5 else None,
+            "review_count": int(count)
+            if count is not None and count.is_integer() and 0 <= count <= 2**53 - 1
+            else 0,
+            "distance_m": round(dist),
+        }
+        clean["place_id"] = place_id(clean)
+        result.append(clean)
     return result
 
 
