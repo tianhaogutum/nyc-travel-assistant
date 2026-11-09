@@ -1,14 +1,20 @@
 """LLM service — supports Azure OpenAI (via BricksLLM proxy), Ollama, and Anthropic."""
 
-import httpx
 import logging
 from typing import Optional
 
+import httpx
 from config import (
-    LLM_PROVIDER, LLM_TIMEOUT,
-    AZURE_API_KEY, AZURE_ENDPOINT, AZURE_API_VERSION, AZURE_DEPLOYMENT,
-    OLLAMA_BASE_URL, OLLAMA_MODEL,
-    ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    AZURE_API_KEY,
+    AZURE_API_VERSION,
+    AZURE_DEPLOYMENT,
+    AZURE_ENDPOINT,
+    LLM_PROVIDER,
+    LLM_TIMEOUT,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +29,11 @@ async def call_llm(prompt: str, deployment: Optional[str] = None) -> str:
     if LLM_PROVIDER == "ollama":
         return await _call_ollama(prompt, model=deployment)
     if LLM_PROVIDER == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            return ""
         return await _call_anthropic(prompt)
+    if LLM_PROVIDER != "azure" or not AZURE_API_KEY or not AZURE_ENDPOINT:
+        return ""
     return await _call_azure(prompt, deployment=deployment)
 
 
@@ -59,7 +69,9 @@ async def _call_azure(prompt: str, deployment: Optional[str] = None) -> str:
         logger.error("Unexpected Azure response format")
         return ""
     except httpx.HTTPStatusError as exc:
-        logger.error("Azure API error %d: %s", exc.response.status_code, exc.response.text[:200])
+        logger.error(
+            "Azure API error %d: %s", exc.response.status_code, exc.response.text[:200]
+        )
         return ""
     except Exception as exc:
         logger.error("Azure OpenAI call failed: %s", exc)
@@ -92,7 +104,9 @@ async def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
         logger.error("Unexpected Ollama response format")
         return ""
     except httpx.HTTPStatusError as exc:
-        logger.error("Ollama API error %d: %s", exc.response.status_code, exc.response.text[:200])
+        logger.error(
+            "Ollama API error %d: %s", exc.response.status_code, exc.response.text[:200]
+        )
         return ""
     except Exception as exc:
         logger.error("Ollama call failed: %s", exc)
@@ -112,7 +126,9 @@ async def _call_anthropic(prompt: str) -> str:
     }
     try:
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
-            resp = await client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers)
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages", json=payload, headers=headers
+            )
             resp.raise_for_status()
             return resp.json()["content"][0]["text"]
     except httpx.TimeoutException:
@@ -122,7 +138,11 @@ async def _call_anthropic(prompt: str) -> str:
         logger.error("Unexpected Anthropic response format")
         return ""
     except httpx.HTTPStatusError as exc:
-        logger.error("Anthropic API error %d: %s", exc.response.status_code, exc.response.text[:200])
+        logger.error(
+            "Anthropic API error %d: %s",
+            exc.response.status_code,
+            exc.response.text[:200],
+        )
         return ""
     except Exception as exc:
         logger.error("Anthropic call failed: %s", exc)

@@ -1,7 +1,6 @@
 """User profile service — read helen_profile.md and provide structured summary."""
 
 import logging
-from pathlib import Path
 from functools import lru_cache
 
 from config import USER_PROFILE_PATH

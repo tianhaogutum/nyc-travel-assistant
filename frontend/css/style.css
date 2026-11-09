@@ -1197,3 +1197,12 @@ details[open] .neg-snippets-title::before { content: '▼ '; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 2px; }
+
+/* Native controls keep the existing design while supporting keyboard use. */
+button.q-opt, button.cat-card { font: inherit; color: inherit; }
+button.cat-card { width: 100%; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 3px solid #7c5cfc; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

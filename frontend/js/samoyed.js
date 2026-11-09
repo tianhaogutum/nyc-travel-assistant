@@ -27,7 +27,7 @@ const Samoyed = {
       <div class="dog-container">
         <img class="dog-img ${cls}" src="img/samoyed.jpg" alt="Samoyed">
       </div>
-      <div class="bubble">${text}</div>
+      <div class="bubble">${Html.escape(text)}</div>
     `;
   },
 

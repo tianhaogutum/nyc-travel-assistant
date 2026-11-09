@@ -33,11 +33,11 @@ const Questionnaire = {
       schema.questions.forEach((q, qi) => {
         const savedVal = saved ? saved[q.id] : null;
         const isMulti = !!q.multi;
-        const savedArr = isMulti && savedVal ? savedVal.split(', ') : [];
+        const savedArr = isMulti && typeof savedVal === 'string' ? savedVal.split(', ') : [];
         h += `<div class="q-group"><p class="q-label"><span class="q-num">${qi + 1}</span>${q.label}${isMulti ? ' <span class="q-multi-hint">(Multiple choice)</span>' : ''}</p><div class="q-options">`;
         q.options.forEach(opt => {
           const sel = isMulti ? (savedArr.includes(opt) ? ' sel' : '') : (savedVal === opt ? ' sel' : '');
-          h += `<span class="q-opt${sel}" data-qid="${q.id}" data-val="${opt}" data-multi="${isMulti}">${opt}</span>`;
+          h += `<button type="button" aria-pressed="${!!sel}" class="q-opt${sel}" data-qid="${q.id}" data-val="${opt}" data-multi="${isMulti}">${opt}</button>`;
         });
         h += '</div></div>';
       });
@@ -49,7 +49,7 @@ const Questionnaire = {
       // Summarise saved answers as chips
       const summaryChips = schema.questions.map(q => {
         const v = saved[q.id];
-        return v ? `<span class="q-summary-chip">${v}</span>` : '';
+        return v ? `<span class="q-summary-chip">${Html.escape(v)}</span>` : '';
       }).join('');
 
       container.innerHTML = `
@@ -78,6 +78,9 @@ const Questionnaire = {
           container.querySelectorAll(`.q-opt[data-qid="${el.dataset.qid}"]`).forEach(s => s.classList.remove('sel'));
           el.classList.add('sel');
         }
+        container.querySelectorAll('.q-opt').forEach(option => {
+          option.setAttribute('aria-pressed', String(option.classList.contains('sel')));
+        });
       });
     });
 

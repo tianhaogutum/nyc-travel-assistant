@@ -1,71 +1,85 @@
-"""Web search service — search for negative reviews via DuckDuckGo."""
+"""Best-effort review search with bounded workers, deadlines and a small TTL cache."""
 
 import asyncio
 import logging
-from typing import Optional
+import threading
+import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
-
-# Lazy import so duckduckgo_search is optional at import time
-_ddgs = None
-
-
-def _get_ddgs():
-    global _ddgs
-    if _ddgs is None:
-        try:
-            from duckduckgo_search import DDGS
-            _ddgs = DDGS()
-        except ImportError:
-            logger.warning("duckduckgo-search not installed — web search disabled")
-    return _ddgs
+_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="review-search")
+_slots = threading.BoundedSemaphore(5)
+_cache = OrderedDict()
+_cache_lock = threading.Lock()
+CACHE_TTL = 900
+CACHE_SIZE = 256
+SEARCH_BUDGET_SECONDS = 12
 
 
 def _search_one(place_name: str, max_results: int = 3) -> list[str]:
-    """Search DuckDuckGo for negative reviews of a single place. Synchronous."""
-    ddgs = _get_ddgs()
-    if ddgs is None:
+    try:
+        from duckduckgo_search import DDGS
+
+        # The client is not shared across threads; each HTTP request has a timeout.
+        with DDGS(timeout=4) as ddgs:
+            snippets = []
+            for query in (
+                f'"{place_name}" NYC bad review',
+                f'"{place_name}" NYC 踩雷 差评',
+            ):
+                for result in ddgs.text(query, max_results=max_results):
+                    body = result.get("body")
+                    if isinstance(body, str) and body:
+                        snippets.append(body[:300])
+            return list(dict.fromkeys(snippets))
+    except Exception as exc:
+        logger.debug("Review search unavailable for %r: %s", place_name, exc)
         return []
 
-    queries = [
-        f'"{place_name}" NYC bad review',
-        f'"{place_name}" 踩雷 差评',
-    ]
-    snippets: list[str] = []
-    for q in queries:
-        try:
-            results = list(ddgs.text(q, max_results=max_results))
-            for r in results:
-                body = r.get("body", "")
-                if body:
-                    snippets.append(body[:300])
-        except Exception as exc:
-            logger.debug("DuckDuckGo search failed for %r: %s", q, exc)
+
+def _cached_search(name):
+    snippets = _search_one(name)
+    with _cache_lock:
+        _cache[name] = (time.monotonic(), tuple(snippets))
+        _cache.move_to_end(name)
+        while len(_cache) > CACHE_SIZE:
+            _cache.popitem(last=False)
     return snippets
 
 
 async def search_negative_reviews(place_names: list[str]) -> dict[str, list[str]]:
-    """Search negative reviews for a batch of place names.
+    # Slots are released when the real thread completes, not when an awaiting
+    # request is cancelled. Overload skips optional searches instead of queuing.
+    deadline = time.monotonic() + SEARCH_BUDGET_SECONDS
+    results = {}
 
-    Returns {place_name: [snippet, ...]} — empty list if nothing found or search fails.
-    Runs searches in a thread pool to avoid blocking the event loop.
-    """
-    loop = asyncio.get_event_loop()
-    results: dict[str, list[str]] = {}
-
-    async def _do(name: str):
+    async def search(name):
+        with _cache_lock:
+            cached = _cache.get(name)
+            if cached and time.monotonic() - cached[0] < CACHE_TTL:
+                results[name] = list(cached[1])
+                return
+        while True:
+            if time.monotonic() >= deadline:
+                results[name] = []
+                return
+            if _slots.acquire(blocking=False):
+                break
+            await asyncio.sleep(0.05)
         try:
-            snippets = await loop.run_in_executor(None, _search_one, name)
-            results[name] = snippets
+            future = _executor.submit(_cached_search, name)
+        except BaseException:
+            _slots.release()
+            raise
+        future.add_done_callback(lambda _, slots=_slots: slots.release())
+        try:
+            remaining = max(0, deadline - time.monotonic())
+            results[name] = await asyncio.wait_for(
+                asyncio.wrap_future(future), remaining
+            )
         except Exception:
             results[name] = []
 
-    # Run up to 5 concurrent searches to be polite to DuckDuckGo
-    sem = asyncio.Semaphore(5)
-
-    async def _bounded(name: str):
-        async with sem:
-            await _do(name)
-
-    await asyncio.gather(*[_bounded(n) for n in place_names])
+    await asyncio.gather(*(search(name) for name in dict.fromkeys(place_names)))
     return results

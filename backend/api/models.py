@@ -1,7 +1,11 @@
 """Pydantic models for API requests and responses."""
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Annotated, Optional
+
+from pydantic import BaseModel, Field, StringConstraints
+
+ShortText = Annotated[str, StringConstraints(max_length=500)]
+Label = Annotated[str, StringConstraints(max_length=100)]
 
 
 class EatRequest(BaseModel):
@@ -10,8 +14,8 @@ class EatRequest(BaseModel):
     radius_km: float = Field(default=1.0, ge=0.1, le=100)
     data_source: str = Field(default="manhattan", pattern=r"^(brooklyn|manhattan)$")
     mode: str = Field(default="ai", pattern=r"^(ai|raw)$")
-    labels: list[str] = Field(default_factory=list)
-    questionnaire: dict = Field(default_factory=dict)
+    labels: list[Label] = Field(default_factory=list, max_length=100)
+    questionnaire: dict[Label, ShortText] = Field(default_factory=dict, max_length=30)
 
 
 class ExploreRequest(BaseModel):
@@ -19,13 +23,16 @@ class ExploreRequest(BaseModel):
     longitude: float = Field(..., ge=-180, le=180)
     radius_km: float = Field(default=1.0, ge=0.1, le=100)
     data_source: str = Field(default="manhattan", pattern=r"^(brooklyn|manhattan)$")
-    category: str = Field(default="culture", pattern=r"^(culture|entertainment|shopping|other)$")
+    category: str = Field(
+        default="culture", pattern=r"^(culture|entertainment|shopping|other)$"
+    )
     mode: str = Field(default="ai", pattern=r"^(ai|raw)$")
-    labels: list[str] = Field(default_factory=list)
-    questionnaire: dict = Field(default_factory=dict)
+    labels: list[Label] = Field(default_factory=list, max_length=100)
+    questionnaire: dict[Label, ShortText] = Field(default_factory=dict, max_length=30)
 
 
 class RankingItem(BaseModel):
+    place_id: str = ""
     rank: int
     name: str
     rating: Optional[float] = None
@@ -45,6 +52,7 @@ class RankingItem(BaseModel):
 
 
 class PipelineResponse(BaseModel):
+    ranking_method: str = "raw"
     rankings: list[RankingItem] = []
     total: int = 0
     radius_km: float = 0

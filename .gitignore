@@ -4,3 +4,7 @@ __pycache__/
 .env
 backend/.env
 *.pem
+
+node_modules/
+.pytest_cache/
+.ruff_cache/

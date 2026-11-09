@@ -1,42 +1,62 @@
-/* ===== api.js – API client & Geo with test mode ===== */
+/* API requests are cancellable and bounded; SSE supports split UTF-8 and CRLF. */
 const Api = {
-  async post(path, body) {
-    const res = await fetch(`${CONFIG.API_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  async request(path, options = {}, timeoutMs = 20000) {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+    const res = await fetch(`${CONFIG.API_BASE}${path}`, { ...options, signal });
     if (!res.ok) throw new Error(`API ${res.status}`);
+    return res;
+  },
+
+  async post(path, body, signal) {
+    const res = await this.request(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal,
+    }, 330000);
     return res.json();
   },
 
-  async get(path) {
-    const res = await fetch(`${CONFIG.API_BASE}${path}`);
-    if (!res.ok) throw new Error(`API ${res.status}`);
+  async get(path, signal) {
+    const res = await this.request(path, { signal });
     return res.json();
   },
 
-  async stream(path, body, onEvent) {
-    const res = await fetch(`${CONFIG.API_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`API ${res.status}`);
+  async stream(path, body, onEvent, signal) {
+    const res = await this.request(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal,
+    }, 330000);
+    if (!res.body) throw new Error('Streaming is not supported by this response.');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split('\n\n');
-      buffer = parts.pop();
-      for (const part of parts) {
-        if (part.startsWith('data: ') && !part.includes('[DONE]')) {
-          onEvent(JSON.parse(part.slice(6)));
+    let completed = false;
+    const dispatch = frame => {
+      const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).replace(/^ /, '')).join('\n');
+      if (!data) return;
+      if (data === '[DONE]') { completed = true; return; }
+      onEvent(JSON.parse(data));
+    };
+    try {
+      while (!completed) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        let boundary;
+        while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+          dispatch(buffer.slice(0, boundary.index));
+          buffer = buffer.slice(boundary.index + boundary[0].length);
+          if (completed) break;
+        }
+        if (done) {
+          if (buffer.trim() && !completed) dispatch(buffer);
+          if (!completed) throw new Error('Connection interrupted. Please try again.');
+          break;
         }
       }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   },
 };
@@ -76,7 +96,13 @@ const Geo = {
   async getLocation() {
     const mode = this.getLocMode();
     if (mode === 'test') return this.getTestLocation();
-    if (mode === 'custom') return { lat: this.getCustomLat(), lng: this.getCustomLng() };
+    if (mode === 'custom') {
+      const lat = this.getCustomLat(), lng = this.getCustomLng();
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        throw new Error('Please enter valid latitude (-90 to 90) and longitude (-180 to 180).');
+      }
+      return { lat, lng };
+    }
     // gps
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {

@@ -2,8 +2,13 @@
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+from services.pipeline import (
+    run_eat_pipeline,
+    run_raw_eat_pipeline,
+    stream_eat_pipeline,
+)
+
 from api.models import EatRequest, PipelineResponse
-from services.pipeline import run_eat_pipeline, run_raw_eat_pipeline, stream_eat_pipeline
 
 router = APIRouter()
 
@@ -40,6 +45,7 @@ async def eat_stream(req: EatRequest):
             data_source=req.data_source,
             questionnaire=req.questionnaire or {},
             labels=req.labels or None,
+            raw=req.mode == "raw",
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

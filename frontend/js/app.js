@@ -2,6 +2,26 @@
 (function () {
   const $app = document.getElementById('app');
 
+  let activeRequest = null;
+  let labelRequest = null;
+  let labelCategory = null;
+  function cancelRequests() {
+    activeRequest?.abort();
+    activeRequest = null;
+    labelRequest?.abort();
+    labelRequest = null;
+  }
+
+  // One document listener, instead of one retained closure per label reload.
+  document.addEventListener('click', event => {
+    const container = document.getElementById('label-container');
+    if (container && !container.contains(event.target)) {
+      const dropdown = container.querySelector('#label-dropdown');
+      if (dropdown) dropdown.hidden = true;
+      container.querySelector('#label-toggle-btn')?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
   /* ===== Onboarding helpers ===== */
   function isOnboarded() {
     return localStorage.getItem(CONFIG.STORAGE_KEY_ONBOARDED) === '1';
@@ -70,7 +90,7 @@
     const mode = Geo.getLocMode();
     const tli = Geo.getTestLocationIndex();
     const locOpts = TEST_LOCATIONS.map((l, i) =>
-      `<option value="${i}"${i === tli ? ' selected' : ''}>${l.label}</option>`
+      `<option value="${i}"${i === tli ? ' selected' : ''}>${Html.escape(l.label)}</option>`
     ).join('');
     const customLat = Geo.getCustomLat();
     const customLng = Geo.getCustomLng();
@@ -94,7 +114,11 @@
 
   function wireTopBar() {
     const selDs = document.getElementById('sel-ds');
-    if (selDs) selDs.addEventListener('change', () => Geo.setDataSource(selDs.value));
+    if (selDs) selDs.addEventListener('change', () => {
+      Geo.setDataSource(selDs.value);
+      _selectedLabels = [];
+      if (labelCategory) loadLabels(selDs.value, labelCategory);
+    });
 
     document.querySelectorAll('.loc-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -267,23 +291,29 @@
   async function loadLabels(dataSource, category) {
     const container = document.getElementById('label-container');
     if (!container) return;
+    labelCategory = category;
+    labelRequest?.abort();
+    const controller = new AbortController();
+    labelRequest = controller;
     _selectedLabels = [];
+    container.textContent = 'Loading...';
     try {
-      const data = await Api.get(`/api/labels?data_source=${dataSource}&category=${category}`);
+      const data = await Api.get(`/api/labels?data_source=${dataSource}&category=${category}`, controller.signal);
+      if (controller.signal.aborted || !container.isConnected) return;
       const labels = data.labels || [];
       if (!labels.length) { container.innerHTML = '<span class="pipe-hint">No categories available</span>'; return; }
 
       const optItems = labels.map(l =>
         `<label class="label-option">
-          <input type="checkbox" value="${l.label}">
-          <span>${_labelDisplay(l.label)}</span>
-          <span class="label-count">${l.count}</span>
+          <input type="checkbox" value="${Html.escape(l.label)}">
+          <span>${Html.escape(_labelDisplay(l.label))}</span>
+          <span class="label-count">${Html.escape(l.count)}</span>
         </label>`
       ).join('');
 
       container.innerHTML = `
-        <button class="label-toggle-btn" id="label-toggle-btn">All Categories ▼</button>
-        <div class="label-dropdown" id="label-dropdown" style="display:none">
+        <button class="label-toggle-btn" id="label-toggle-btn" aria-expanded="false" aria-controls="label-dropdown">All Categories ▼</button>
+        <div class="label-dropdown" id="label-dropdown" hidden>
           <label class="label-option label-clear">
             <input type="checkbox" id="label-all" checked>
             <span>All (No Filter)</span>
@@ -297,16 +327,8 @@
 
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const open = dropdown.style.display === 'none';
-        dropdown.style.display = open ? '' : 'none';
-        toggleBtn.textContent = (open ? '▲ ' : '') + (toggleBtn.textContent.replace(/^▲ /, ''));
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!container.contains(e.target)) {
-          dropdown.style.display = 'none';
-          _updateLabelToggleText();
-        }
+        dropdown.hidden = !dropdown.hidden;
+        toggleBtn.setAttribute('aria-expanded', String(!dropdown.hidden));
       });
 
       container.querySelectorAll('input[type=checkbox]:not(#label-all)').forEach(chk => {
@@ -330,7 +352,11 @@
         }
       });
 
-    } catch { container.innerHTML = '<span class="pipe-hint">Failed to load</span>'; }
+    } catch {
+      if (!controller.signal.aborted && container.isConnected) {
+        container.innerHTML = '<span class="pipe-hint">Failed to load categories</span>';
+      }
+    }
   }
 
   function wirePipelineSettings() {
@@ -350,6 +376,7 @@
   }
 
   function pageEat() {
+    cancelRequests();
     const m = getMode();
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
@@ -368,18 +395,19 @@
       Questionnaire.render(QUESTIONNAIRE_A, qc, (answers) => runEatPipeline(answers));
     }
     document.querySelectorAll('.mode-btn').forEach(btn => {
-      btn.addEventListener('click', () => setTimeout(() => pageEat(), 50));
+      btn.addEventListener('click', () => pageEat());
     });
   }
 
   /* ===== PAGE: Explore category picker ===== */
   function pageExplore() {
+    cancelRequests();
     const m = getMode();
     const cats = EXPLORE_CATEGORIES.map(c =>
-      `<div class="cat-card" data-cat="${c.id}" style="--cat-color:${c.color}">
+      `<button type="button" aria-pressed="false" class="cat-card" data-cat="${c.id}" style="--cat-color:${c.color}">
         <span class="cat-icon">${c.icon}</span>
         <span class="cat-label">${c.label}</span>
-      </div>`
+      </button>`
     ).join('');
 
     $app.innerHTML = renderTopBar() + `
@@ -406,25 +434,29 @@
         const panel = document.getElementById('explore-action-panel');
         if (panel) panel.style.display = '';
         loadLabels(Geo.getDataSource(), el.dataset.cat);
-        /* re-wire action button after label reload */
-        setTimeout(() => {
-          document.getElementById('btn-raw-explore')?.addEventListener('click', () => {
-            runExplorePipeline(window._exploreCategory || 'culture', {});
-          });
-          document.getElementById('btn-ai-explore')?.addEventListener('click', () => {
-            location.hash = '#/explore/questionnaire';
-          });
-        }, 0);
+        document.querySelectorAll('.cat-card').forEach(card => {
+          card.setAttribute('aria-pressed', String(card === el));
+        });
       });
     });
+    document.getElementById('btn-raw-explore')?.addEventListener('click', () => {
+      runExplorePipeline(window._exploreCategory || 'culture', {});
+    });
+    document.getElementById('btn-ai-explore')?.addEventListener('click', () => {
+      location.hash = '#/explore/questionnaire';
+    });
+    _selectedLabels = [];
+    labelCategory = null;
+    document.getElementById('label-container').textContent = 'Choose a category above.';
 
     document.querySelectorAll('.mode-btn').forEach(btn => {
-      btn.addEventListener('click', () => setTimeout(() => pageExplore(), 50));
+      btn.addEventListener('click', () => pageExplore());
     });
   }
 
   /* ===== PAGE: Explore questionnaire ===== */
   function pageExploreQ() {
+    cancelRequests();
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
         ${Samoyed.render('think')}
@@ -473,16 +505,24 @@
     const eggHtml = EasterEggs.renderBanners(eggs);
 
     /* reasoning methodology banner */
+    const statusMessages = {
+      cold: 'Nearby matches are ready. AI is personalizing your recommendations...',
+      ai: 'Ranked using your preferences, place data and available review evidence.',
+      fallback: 'AI is unavailable. Results use rating confidence and distance.',
+      raw: 'Sorted by review count. No AI ranking was used.',
+      empty: 'No places match these filters. Try a larger radius or another category.',
+    };
+    const status = data.ranking_method || data.type || 'raw';
     const reasoningBanner = `
       <div class="reasoning-banner">
-        <p class="reasoning-oneliner">🧠 Ranked by combining your preferences, Google data, AI insights, online reviews & expert recommendations.</p>
+        <p class="reasoning-oneliner" role="status">${Html.escape(statusMessages[status] || statusMessages.raw)}</p>
       </div>`;
 
     const cards = (data.rankings || []).map(r => {
       const topCls = r.rank <= 3 ? ' top' : '';
       const comment = Samoyed.commentForRank(r.rank);
-      const highlightsHtml = (r.highlights || []).map(h => `<span class="tag tag-pro">✓ ${h}</span>`).join('');
-      const warningsHtml = (r.warnings || []).map(w => `<span class="tag tag-con">⚠ ${w}</span>`).join('');
+      const highlightsHtml = (r.highlights || []).map(h => `<span class="tag tag-pro">✓ ${Html.escape(h)}</span>`).join('');
+      const warningsHtml = (r.warnings || []).map(w => `<span class="tag tag-con">⚠ ${Html.escape(w)}</span>`).join('');
 
       /* per-card reasoning breakdown */
       const rs = r.reasoning_sources || {};
@@ -491,11 +531,11 @@
         reasoningHtml = `
           <div class="r-reasoning">
             <p class="r-reasoning-title">📐 Ranking Breakdown</p>
-            ${rs.user_pref ? `<p class="rr-line"><span class="rr-tag rr-user">👤 Preference</span> ${rs.user_pref}</p>` : ''}
-            ${rs.google_data ? `<p class="rr-line"><span class="rr-tag rr-google">📊 Data</span> ${rs.google_data}</p>` : ''}
-            ${rs.llm_knowledge ? `<p class="rr-line"><span class="rr-tag rr-ai">🧠 AI</span> ${rs.llm_knowledge}</p>` : ''}
-            ${rs.negative_reviews ? `<p class="rr-line"><span class="rr-tag rr-neg">🔍 Reviews</span> ${rs.negative_reviews}</p>` : ''}
-            ${rs.online_editorial ? `<p class="rr-line"><span class="rr-tag rr-editorial">📰 Expert Pick</span> ${rs.online_editorial}</p>` : ''}
+            ${rs.user_pref ? `<p class="rr-line"><span class="rr-tag rr-user">👤 Preference</span> ${Html.escape(rs.user_pref)}</p>` : ''}
+            ${rs.google_data ? `<p class="rr-line"><span class="rr-tag rr-google">📊 Data</span> ${Html.escape(rs.google_data)}</p>` : ''}
+            ${rs.llm_knowledge ? `<p class="rr-line"><span class="rr-tag rr-ai">🧠 AI</span> ${Html.escape(rs.llm_knowledge)}</p>` : ''}
+            ${rs.negative_reviews ? `<p class="rr-line"><span class="rr-tag rr-neg">🔍 Reviews</span> ${Html.escape(rs.negative_reviews)}</p>` : ''}
+            ${rs.online_editorial ? `<p class="rr-line"><span class="rr-tag rr-editorial">📰 Expert Pick</span> ${Html.escape(rs.online_editorial)}</p>` : ''}
           </div>`;
       }
 
@@ -503,7 +543,7 @@
       const snippets = r.neg_review_snippets || [];
       let negSnippetsHtml = '';
       if (snippets.length > 0) {
-        const snippetItems = snippets.map(s => `<li class="neg-snippet">${s}</li>`).join('');
+        const snippetItems = snippets.map(s => `<li class="neg-snippet">${Html.escape(s)}</li>`).join('');
         negSnippetsHtml = `
           <details class="neg-snippets-block">
             <summary class="neg-snippets-title">🔎 DuckDuckGo Reviews (${snippets.length})</summary>
@@ -514,36 +554,36 @@
       return `
         <div class="r-card${topCls} fade-up">
           <div class="r-header">
-            <span class="r-rank">#${r.rank}</span>
-            <span class="r-name">${r.name}</span>
-            ${r.rating ? `<span class="r-rating">⭐${r.rating}</span>` : ''}
+            <span class="r-rank">#${Html.escape(r.rank)}</span>
+            <span class="r-name">${Html.escape(r.name)}</span>
+            ${r.rating ? `<span class="r-rating">⭐${Html.escape(r.rating)}</span>` : ''}
           </div>
           <p class="r-comment">${comment}</p>
-          ${r.description ? `<p class="r-desc">${r.description}</p>` : ''}
-          ${r.review ? `<div class="r-review">${r.review}</div>` : ''}
-          ${r.recommendation ? `<p class="r-rec">${r.recommendation}</p>` : ''}
+          ${r.description ? `<p class="r-desc">${Html.escape(r.description)}</p>` : ''}
+          ${r.review ? `<div class="r-review">${Html.escape(r.review)}</div>` : ''}
+          ${r.recommendation ? `<p class="r-rec">${Html.escape(r.recommendation)}</p>` : ''}
           <div class="r-tags">${highlightsHtml}${warningsHtml}</div>
           ${negSnippetsHtml}
           ${reasoningHtml}
           <div class="r-meta">
-            ${r.primary_type ? `<span>${r.primary_type}</span>` : ''}
-            ${r.price_level ? `<span>${r.price_level}</span>` : ''}
-            ${r.distance_m ? `<span>${r.distance_m}m</span>` : ''}
-            ${r.review_count ? `<span>${r.review_count} reviews</span>` : ''}
+            ${r.primary_type ? `<span>${Html.escape(r.primary_type)}</span>` : ''}
+            ${r.price_level ? `<span>${Html.escape(r.price_level)}</span>` : ''}
+            ${r.distance_m != null ? `<span>${Html.escape(r.distance_m)}m</span>` : ''}
+            ${r.review_count ? `<span>${Html.escape(r.review_count)} reviews</span>` : ''}
           </div>
         </div>`;
     }).join('');
 
     const meta = `
       <div class="result-meta">
-        Found ${data.total} results · ${data.data_source} · ${data.radius_km}km
-        ${data.category ? ` · ${data.category}` : ''}
-        · ${data.pipeline_time_ms}ms
+        Found ${Html.escape(data.total)} results · ${Html.escape(data.data_source)} · ${Html.escape(data.radius_km)}km
+        ${data.category ? ` · ${Html.escape(data.category)}` : ''}
+        · ${Html.escape(data.pipeline_time_ms)}ms
       </div>`;
 
     $app.innerHTML = renderTopBar() + `
       <div class="page fade-up">
-        ${Samoyed.render('happy')}
+        ${Samoyed.render(data.total ? 'happy' : 'sad')}
         ${eggHtml}
         ${meta}
         ${reasoningBanner}
@@ -578,21 +618,23 @@
       </div>` + renderNav('#/profile');
     wireTopBar();
 
-    // load profile
+    const controller = new AbortController();
+    activeRequest = controller;
+    const box = document.getElementById('profile-box');
     try {
-      const p = await Api.get('/api/profile');
-      const box = document.getElementById('profile-box');
+      const p = await Api.get('/api/profile', controller.signal);
+      if (controller.signal.aborted || !box.isConnected) return;
       if (box) {
         box.innerHTML = `
           <div class="profile-section">
-            <h3>👤 ${p.name || 'User'}</h3>
-            <p>${p.summary || ''}</p>
+            <h3>👤 ${Html.escape(p.name || 'User')}</h3>
+            <p>${Html.escape(p.summary || '')}</p>
           </div>
           ${p.structured ? renderStructured(p.structured) : ''}`;
       }
     } catch (e) {
-      const box = document.getElementById('profile-box');
-      if (box) box.innerHTML = `<p class="err">無法載入 profile：${e.message}</p>`;
+      if (controller.signal.aborted || !box.isConnected) return;
+      if (box) box.innerHTML = `<p class="err">無法載入 profile：${Html.escape(e.message)}</p>`;
     }
 
     document.getElementById('btn-clear-eat')?.addEventListener('click', () => {
@@ -614,69 +656,69 @@
       let val = v;
       if (Array.isArray(v)) val = v.join(', ');
       else if (typeof v === 'object' && v !== null) val = Object.entries(v).map(([sk, sv]) => `${sk}: ${Array.isArray(sv) ? sv.join(', ') : sv}`).join(' · ');
-      return `<div class="profile-row"><span class="profile-key">${k}</span><span class="profile-val">${val}</span></div>`;
+      return `<div class="profile-row"><span class="profile-key">${Html.escape(k)}</span><span class="profile-val">${Html.escape(val)}</span></div>`;
     }).join('');
     return `<div class="profile-section"><h3>🗂 Details</h3>${entries}</div>`;
   }
 
   /* ===== Pipeline runners ===== */
-  async function runEatPipeline(answers) {
-    const mode = getMode();
-    pageLoading(mode === 'raw' ? '📊 Getting results nearby...' : '🧠 Analyzing your preferences...');
-    try {
-      const loc = await Geo.getLocation();
-      const payload = {
-        latitude: loc.lat,
-        longitude: loc.lng,
-        radius_km: getRadius(),
-        data_source: Geo.getDataSource(),
-        mode: mode,
-        labels: _selectedLabels,
-        questionnaire: answers,
-      };
-      if (mode === 'raw') {
-        const res = await Api.post('/api/eat', payload);
-        pageResults(res, '#/eat');
-      } else {
-        await Api.stream('/api/eat/stream', payload, (data) => {
-          pageResults(data, '#/eat');
-        });
-      }
-    } catch (e) {
-      pageResults({ error: e.message, rankings: [], total: 0, radius_km: 0, data_source: '', pipeline_time_ms: 0 }, '#/eat');
-    }
+  function runEatPipeline(answers) {
+    return runPipeline('eat', null, answers);
   }
 
-  async function runExplorePipeline(category, answers) {
+  function runExplorePipeline(category, answers) {
+    return runPipeline('explore', category, answers);
+  }
+
+  async function runPipeline(kind, category, answers) {
+    cancelRequests();
+    const controller = new AbortController();
+    activeRequest = controller;
     const mode = getMode();
-    pageLoading(mode === 'raw' ? '📊 Getting results nearby...' : '🧠 Analyzing your preferences...');
+    const backHash = `#/${kind}`;
+    const payload = {
+      radius_km: getRadius(), data_source: Geo.getDataSource(), mode,
+      labels: [..._selectedLabels], questionnaire: answers,
+      ...(category ? { category } : {}),
+    };
+    let lastResult = null;
+    pageLoading(mode === 'raw' ? 'Getting results nearby...' : 'Analyzing your preferences...');
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-outline';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => kind === 'eat' ? pageEat() : pageExplore());
+    $app.querySelector('.page').append(cancel);
+    const show = data => {
+      if (controller.signal.aborted) return;
+      lastResult = data;
+      pageResults(data, backHash);
+    };
     try {
       const loc = await Geo.getLocation();
-      const payload = {
-        latitude: loc.lat,
-        longitude: loc.lng,
-        radius_km: getRadius(),
-        data_source: Geo.getDataSource(),
-        category: category,
-        mode: mode,
-        labels: _selectedLabels,
-        questionnaire: answers,
-      };
-      if (mode === 'raw') {
-        const res = await Api.post('/api/explore', payload);
-        pageResults(res, '#/explore');
+      if (controller.signal.aborted) return;
+      payload.latitude = loc.lat;
+      payload.longitude = loc.lng;
+      if (mode === 'raw') show(await Api.post(`/api/${kind}`, payload, controller.signal));
+      else await Api.stream(`/api/${kind}/stream`, payload, show, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (lastResult && !lastResult.error) {
+        show({ ...lastResult, ranking_method: lastResult.type === 'cold' ? 'fallback' : lastResult.ranking_method });
+        const notice = document.createElement('p');
+        notice.setAttribute('role', 'status');
+        notice.textContent = 'Connection interrupted. Showing the last available results.';
+        $app.querySelector('.reasoning-banner')?.append(notice);
       } else {
-        await Api.stream('/api/explore/stream', payload, (data) => {
-          pageResults(data, '#/explore');
-        });
+        pageResults({ error: error.message, rankings: [], total: 0 }, backHash);
       }
-    } catch (e) {
-      pageResults({ error: e.message, rankings: [], total: 0, radius_km: 0, data_source: '', pipeline_time_ms: 0 }, '#/explore');
+    } finally {
+      if (activeRequest === controller) activeRequest = null;
     }
   }
 
   /* ===== Router ===== */
   function route() {
+    cancelRequests();
     const hash = location.hash || '#/';
     /* redirect to onboarding if first visit */
     if (!isOnboarded() && hash !== '#/welcome') {
